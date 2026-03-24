@@ -1,0 +1,45 @@
+version: 1
+
+agents:
+  - name: news-monitor
+    model: qwen2.5:3b
+    system: |
+      You are a news monitor. Every time you receive a "scan" trigger,
+      fetch the latest headlines from the sources in your memory and write
+      a short summary (3-5 bullets) to your outbox. Flag anything urgent
+      with [URGENT] at the start.
+    triggers:
+      - cron: "0 * * * *"   # every hour
+        message: "scan"
+
+  - name: inbox-triage
+    model: qwen2.5:3b
+    system: |
+      You receive news summaries. For each one, decide:
+      - If it needs deeper research → forward to deep-researcher with context
+      - If it's routine → archive it
+      - If it's urgent → also send to notify
+    pipes:
+      - from: news-monitor   # reads news-monitor's outbox automatically
+
+  - name: deep-researcher
+    model: qwen3.5:9b
+    system: |
+      You are a deep researcher. When you receive a research request,
+      fetch the full sources, read them carefully, and write a detailed
+      analysis to your outbox. Cite your sources. Be opinionated.
+    pipes:
+      - from: inbox-triage
+
+  - name: notify
+    model: qwen2.5:3b
+    system: |
+      You receive urgent alerts. Send a Telegram message summarising
+      the situation in 2-3 sentences. Use the TELEGRAM_BOT_TOKEN and
+      TELEGRAM_CHAT_ID from your environment.
+    env:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+    pipes:
+      - from: inbox-triage
+        filter: "[URGENT]"   # only urgent messages reach this agent
