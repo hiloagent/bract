@@ -1,7 +1,7 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-export type AgentStatus = 'running' | 'idle' | 'dead' | 'error';
+export type AgentStatus = 'running' | 'idle' | 'dead' | 'error' | 'restarting';
 
 export interface AgentEntry {
   name: string;

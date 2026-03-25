@@ -1,5 +1,5 @@
 {
-  "name": "@losoft/bract-runtime",
+  "name": "@losoft/bract-supervisor",
   "version": "0.0.1",
   "type": "module",
   "exports": {
@@ -11,10 +11,13 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@losoft/bract-runtime": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
     "typescript": "^5.4.0"
   }
 }
