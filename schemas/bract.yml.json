@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/hiloagent/bract/main/schemas/bract.yml.json",
+  "title": "bract fleet config",
+  "description": "Schema for bract.yml — declarative fleet configuration",
+  "type": "object",
+  "required": ["version", "agents"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [1],
+      "description": "Config schema version. Currently must be 1."
+    },
+    "home": {
+      "type": "string",
+      "description": "Where to store agent state. Default: ~/.bract"
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/Agent" }
+    }
+  },
+  "definitions": {
+    "Agent": {
+      "type": "object",
+      "required": ["name", "model"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Unique agent name. Lowercase letters, digits, hyphens only."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model identifier e.g. qwen3.5:9b or claude-sonnet-4-6"
+        },
+        "system": {
+          "type": "string",
+          "description": "System prompt for the agent."
+        },
+        "restart": {
+          "type": "string",
+          "enum": ["always", "on-failure", "never"],
+          "default": "always",
+          "description": "Restart policy if the agent process exits."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variables injected into the agent. Supports ${VAR} expansion."
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Pre-seeded key-value memory entries written to agents/{name}/memory/ at first start."
+        },
+        "triggers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Trigger" },
+          "description": "What wakes this agent up proactively."
+        },
+        "pipes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Pipe" },
+          "description": "Forward messages from another agent's outbox into this agent's inbox."
+        },
+        "mcp": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/McpServer" },
+          "description": "MCP servers to attach to this agent."
+        },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Skill files (npm package or local path) appended to system prompt."
+        }
+      }
+    },
+    "Trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "type": "string",
+          "description": "Standard 5-field cron expression in local timezone."
+        },
+        "webhook": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "HTTP path to expose as a webhook trigger. E.g. /hooks/my-agent"
+        },
+        "message": {
+          "type": "string",
+          "description": "Message body sent to the agent when the trigger fires."
+        }
+      }
+    },
+    "Pipe": {
+      "type": "object",
+      "required": ["from"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Name of the agent whose outbox to watch."
+        },
+        "filter": {
+          "type": "string",
+          "description": "Only forward messages whose body contains this substring."
+        }
+      }
+    },
+    "McpServer": {
+      "type": "object",
+      "required": ["server"],
+      "additionalProperties": false,
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": "MCP server package name, local path, or URL."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Config passed to the MCP server."
+        }
+      }
+    }
+  }
+}
