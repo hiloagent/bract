@@ -118,9 +118,15 @@ No built-in concept of "environments" — that is shell's job.
 - Dynamic fleets (agents that spawn other agents at runtime) can't be fully expressed
   in a static YAML file. This is intentional — runtime spawning is an advanced case
   handled via the plugin API (ADR-005), not the config file.
-- YAML has footguns (implicit type coercion, indentation errors). A JSON schema is
-  provided for editor validation. A future `bract validate` command can lint config
-  files before deployment.
+- YAML has footguns (implicit type coercion, indentation errors). A JSON schema lives at `schemas/bract.yml.json`, published at:
+  `https://raw.githubusercontent.com/hiloagent/bract/main/schemas/bract.yml.json`
+
+  Add this line to the top of your `bract.yml` for editor auto-complete and validation:
+  ```yaml
+  # yaml-language-server: $schema=https://raw.githubusercontent.com/hiloagent/bract/main/schemas/bract.yml.json
+  ```
+
+  A future `bract validate` command will lint config files before deployment.
 
 ## Alternatives considered
 
