@@ -1,0 +1,32 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun test
+      - name: Build packages
+        run: |
+          bun run build --filter './packages/runtime'
+          bun run build --filter './packages/supervisor'
+          bun run build --filter './packages/runner'
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          cd packages/runtime  && bun publish --access public
+          cd ../supervisor     && bun publish --access public
+          cd ../runner         && bun publish --access public
