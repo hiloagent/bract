@@ -27,19 +27,35 @@ $BRACT_HOME/agents/{name}/
 
 Message files in `inbox/` and `outbox/` follow this naming convention:
 ```
-{timestamp_ns}-{ulid}.msg    e.g. 1742860000000000000-01HX....msg
+{timestamp_ns}-{random_hex}.msg    e.g. 1742860000000000000-a3f9c1d2.msg
 ```
 
-Message file format (JSON):
+### Message file format
+
 ```json
 {
-  "id": "01HX....",
+  "v": 1,
+  "id": "a3f9c1d2e5b8...",
   "from": "cli",
   "ts": "2026-03-25T00:00:00.000Z",
   "body": "hello world",
   "metadata": {}
 }
 ```
+
+The `v` field is the schema version. It allows safe migration when the message format changes:
+- Missing `v` → treated as `v: 1` (backwards compat for files written before versioning was added)
+- `v` newer than the runtime's `MESSAGE_VERSION` → runtime throws with a clear error message asking the operator to upgrade bract
+- `v` equal or older → parsed normally
+
+### Invalid message handling
+
+If a `.msg` file contains invalid JSON or fails schema validation, the runtime:
+1. Moves it to `inbox/.unreadable/{original_filename}` — never deleted, preserved for inspection
+2. Logs a structured error to the agent's daily log: `{ "level": "error", "event": "unreadable_message", "file": "...", "reason": "..." }`
+3. Continues processing remaining inbox messages — one bad file does not block the queue
+
+This means operators can always inspect what went wrong with `cat inbox/.unreadable/somefile.msg`.
 
 ## Consequences
 
@@ -53,7 +69,7 @@ Message file format (JSON):
 
 **Bad:**
 - Filesystem polling has latency (~100ms). Not suitable for sub-100ms message delivery. Acceptable for conversational agents; not for high-frequency trading bots.
-- File-per-message creates many small files under heavy load. Mitigated by periodic compaction.
+- File-per-message creates many small files under heavy load. Mitigated by periodic compaction of `.processed/` directories.
 - Cross-machine agents require a shared filesystem (NFS, SSHFS) or a different transport. Out of scope for v1.
 
 ## Alternatives considered
