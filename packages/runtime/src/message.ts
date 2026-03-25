@@ -9,7 +9,12 @@ import {
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
+/** Current message schema version. Increment when the shape changes. */
+export const MESSAGE_VERSION = 1 as const;
+
 export interface Message {
+  /** Schema version — allows safe migration when the format changes. */
+  v: typeof MESSAGE_VERSION;
   id: string;
   from: string;
   ts: string;
@@ -17,19 +22,16 @@ export interface Message {
   metadata: Record<string, unknown>;
 }
 
-/** Generate a sortable message filename: {timestamp_ns}-{random_hex}.msg */
 function messageFilename(): string {
   const ns = BigInt(Date.now()) * 1_000_000n;
   const rnd = randomBytes(8).toString('hex');
   return `${ns}-${rnd}.msg`;
 }
 
-/** Generate a simple unique ID for a message. */
 function generateId(): string {
   return randomBytes(12).toString('hex');
 }
 
-/** Write a message into an agent's inbox. Returns the written Message. */
 export function send(
   inboxDir: string,
   from: string,
@@ -39,6 +41,7 @@ export function send(
   mkdirSync(inboxDir, { recursive: true });
 
   const msg: Message = {
+    v: MESSAGE_VERSION,
     id: generateId(),
     from,
     ts: new Date().toISOString(),
@@ -51,7 +54,6 @@ export function send(
   return msg;
 }
 
-/** Write a message into an agent's outbox. Returns the written Message. */
 export function reply(
   outboxDir: string,
   from: string,
@@ -61,7 +63,6 @@ export function reply(
   return send(outboxDir, from, body, metadata);
 }
 
-/** List all pending message filenames in a directory, sorted oldest-first. */
 export function listPending(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -69,16 +70,26 @@ export function listPending(dir: string): string[] {
     .sort();
 }
 
-/** Read a message from a file without consuming it. */
+/**
+ * Read and parse a message file.
+ * - Missing `v` → normalised to v:1 (legacy compat)
+ * - `v` newer than MESSAGE_VERSION → throws (upgrade bract)
+ */
 export function read(dir: string, filename: string): Message {
   const raw = readFileSync(join(dir, filename), 'utf8');
-  return JSON.parse(raw) as Message;
+  const parsed = JSON.parse(raw) as Partial<Message>;
+  const v = parsed.v ?? 1;
+
+  if (v > MESSAGE_VERSION) {
+    throw new Error(
+      `Message ${filename} has version ${v}, runtime only supports up to ${MESSAGE_VERSION}. ` +
+        'Update bract to read this message.',
+    );
+  }
+
+  return { ...parsed, v: MESSAGE_VERSION } as Message;
 }
 
-/**
- * Consume a message: read it, then move it to `dir/.processed/` so it is
- * preserved for debugging but will not be re-delivered.
- */
 export function consume(dir: string, filename: string): Message {
   const msg = read(dir, filename);
   const processedDir = join(dir, '.processed');
