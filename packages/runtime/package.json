@@ -4,9 +4,9 @@
   "type": "module",
   "exports": {
     ".": {
+      "bun": "./src/index.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "development": "./src/index.ts"
+      "types": "./dist/index.d.ts"
     }
   },
   "scripts": {
