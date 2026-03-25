@@ -67,7 +67,13 @@ agents:
 - `name` must match `[a-z][a-z0-9-]*` (no spaces, no uppercase)
 - `model` must be non-empty; validation against available providers is done at spawn
   time, not at parse time (providers may be offline during parse)
-- Circular pipes are detected at `bract up` time and rejected with an error
+- Circular pipes are detected at `bract up` time using *DFS with three-colour marking*
+  (unvisited → in-progress → done). This catches all cycles including indirect ones
+  (A→B→C→A). The full cycle path is reported in the error:
+  ```
+  Error: circular pipe detected: news-monitor → inbox-triage → deep-researcher → news-monitor
+  ```
+  Implementation: `packages/runtime/src/pipe-validator.ts` — `detectCycles(agents)`
 - `filter` is a substring match (not regex) for v1. Regex support in a later release.
 
 ### Resolution order
