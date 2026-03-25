@@ -1,0 +1,13 @@
+{
+  "name": "bract",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "tsc -b packages/runtime",
+    "test": "node --experimental-strip-types --test packages/runtime/src/*.test.ts 2>/dev/null || node --test packages/runtime/test/*.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

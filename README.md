@@ -65,9 +65,10 @@ ANTHROPIC_BASE_URL=https://openrouter.ai/api BRACT_MODEL=qwen/qwen-2.5-72b-instr
 
 Early design phase. Core runtime being built.
 
-- [ ] Process table (filesystem layout)
+- [x] Process table (filesystem layout)
+- [x] Message module (inbox/outbox read/write, consume-to-processed)
+- [x] Inbox watcher (filesystem polling → agent trigger)
 - [ ] Agent spawner
-- [ ] Inbox watcher (filesystem polling → agent trigger)
 - [ ] Supervisor (crash detection + restart)
 - [ ] CLI (`bract ps`, `bract spawn`, `bract send`, `bract log`)
 - [ ] Pipe (wire agent outboxes together)
