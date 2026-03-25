@@ -38,13 +38,13 @@ $BRACT_HOME/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org) 22+
+- [Bun](https://bun.sh) 1.1+
 - [Ollama](https://ollama.com) running locally (or an Anthropic/OpenRouter API key)
 
 ### Install
 
 ```sh
-npm install -g bract
+bun install -g bract
 ```
 
 ### Start a single agent
