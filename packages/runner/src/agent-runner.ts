@@ -1,0 +1,155 @@
+import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
+import { InboxWatcher, reply, type MessageEvent } from '@losoft/bract-runtime';
+
+export interface AgentRunnerOptions {
+  /** Agent name — must match the directory under $BRACT_HOME/agents/ */
+  name: string;
+  /** BRACT_HOME path */
+  home: string;
+  /** Model ID, e.g. "qwen2.5:7b" or "deepseek-r1:14b" */
+  model: string;
+  /** OpenAI-compatible base URL. Default: http://localhost:11434/v1 */
+  baseUrl?: string;
+  /** System prompt for the agent */
+  system?: string;
+  /** Poll interval in ms. Default: 200 */
+  pollIntervalMs?: number;
+}
+
+export interface RunEvent {
+  agentName: string;
+  messageId: string;
+  reply: string;
+  durationMs: number;
+}
+
+export interface RunErrorEvent {
+  agentName: string;
+  messageId: string;
+  error: unknown;
+}
+
+/**
+ * AgentRunner wires an agent's inbox to a local (Ollama) language model.
+ *
+ * For each incoming message it calls the model and writes the reply to
+ * the agent's outbox. One message is processed at a time — the watcher
+ * pauses during inference and resumes immediately after.
+ *
+ * @example
+ * ```ts
+ * const runner = new AgentRunner({
+ *   name: 'summariser',
+ *   home: process.env.BRACT_HOME!,
+ *   model: 'qwen2.5:7b',
+ *   system: 'You summarise text concisely.',
+ * });
+ *
+ * runner.on('run', ({ reply, durationMs }) => {
+ *   console.log(`[${durationMs}ms] ${reply}`);
+ * });
+ *
+ * await runner.start();
+ * ```
+ */
+export class AgentRunner extends EventEmitter {
+  private readonly opts: Required<AgentRunnerOptions>;
+  private readonly watcher: InboxWatcher;
+  private running = false;
+
+  constructor(options: AgentRunnerOptions) {
+    super();
+    this.opts = {
+      baseUrl: 'http://localhost:11434/v1',
+      system: '',
+      pollIntervalMs: 200,
+      ...options,
+    };
+
+    const agentsRoot = join(this.opts.home, 'agents');
+    this.watcher = InboxWatcher.forAgent(agentsRoot, this.opts.name, {
+      pollIntervalMs: this.opts.pollIntervalMs,
+    });
+
+    this.watcher.on('message', (event: MessageEvent) => {
+      void this.handleMessage(event);
+    });
+
+    this.watcher.on('error', (event) => {
+      this.emit('error', event);
+    });
+  }
+
+  /** Start the inbox watcher. Returns when the runner is active. */
+  async start(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    this.watcher.start();
+  }
+
+  /** Stop the inbox watcher. */
+  stop(): void {
+    this.running = false;
+    this.watcher.stop();
+  }
+
+  private async handleMessage(event: MessageEvent): Promise<void> {
+    // Pause while we process — no parallel inference.
+    this.watcher.stop();
+
+    const { agentName, message } = event;
+    const outboxDir = join(this.opts.home, 'agents', agentName, 'outbox');
+    const t0 = Date.now();
+
+    try {
+      const responseText = await this.callModel(message.body);
+      reply(outboxDir, agentName, responseText, { replyTo: message.id });
+
+      const runEvent: RunEvent = {
+        agentName,
+        messageId: message.id,
+        reply: responseText,
+        durationMs: Date.now() - t0,
+      };
+      this.emit('run', runEvent);
+    } catch (err) {
+      const errEvent: RunErrorEvent = {
+        agentName,
+        messageId: message.id,
+        error: err,
+      };
+      this.emit('run:error', errEvent);
+    } finally {
+      if (this.running) this.watcher.start();
+    }
+  }
+
+  private async callModel(prompt: string): Promise<string> {
+    const messages: Array<{ role: string; content: string }> = [];
+
+    if (this.opts.system) {
+      messages.push({ role: 'system', content: this.opts.system });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const response = await fetch(`${this.opts.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: this.opts.model, messages, stream: false }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Model API error ${response.status}: ${text}`);
+    }
+
+    const data = (await response.json()) as {
+      choices: Array<{ message: { content: string } }>;
+    };
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Model returned empty response');
+    return content;
+  }
+}
