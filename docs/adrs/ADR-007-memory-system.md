@@ -80,7 +80,7 @@ Memory injection is configurable:
 
 ### Memory tools
 
-Agents can read and write their memory via two built-in tools (always available):
+Agents access their memory via built-in tools (always available, no MCP server needed):
 
 **`memory_read(key)`** — read a memory file by name:
 ```json
@@ -93,6 +93,36 @@ Agents can read and write their memory via two built-in tools (always available)
 { "tool": "memory_write", "input": { "key": "findings", "content": "..." } }
 → { "written": true }
 ```
+
+**`memory_append(key, content)`** — append to an existing memory file (creates it if absent):
+```json
+{ "tool": "memory_append", "input": { "key": "findings", "content": "- New finding
+" } }
+→ { "appended": true }
+```
+Avoids reading the full file when only adding new content at the end.
+
+**`memory_replace(key, old, new)`** — find-and-replace within a memory file:
+```json
+{ "tool": "memory_replace", "input": { "key": "preferences", "old": "dislikes preamble", "new": "dislikes preamble and bullet lists" } }
+→ { "replaced": true, "count": 1 }
+```
+Targeted update without a full read-modify-write cycle. Fails if `old` is not found.
+
+**`memory_grep(pattern)`** — search across all memory files by content:
+```json
+{ "tool": "memory_grep", "input": { "pattern": "TypeScript" } }
+→ [{ "key": "code-style", "line": 3, "excerpt": "Focus on TypeScript..." }]
+```
+Essential when the agent has many memory files and needs to find relevant context
+without injecting all of them. Pattern is a plain substring or regex.
+
+**`memory_glob(pattern)`** — find memory files by filename pattern:
+```json
+{ "tool": "memory_glob", "input": { "pattern": "project-*" } }
+→ ["project-context", "project-deadlines"]
+```
+Useful when memory is organised with naming conventions or prefixed by topic.
 
 **`memory_list()`** — list all memory keys:
 ```json
