@@ -1,3 +1,9 @@
+/**
+ * @file home.ts
+ * Resolves BRACT_HOME — the root directory for all agent state.
+ * Checks (in order): explicit --home flag, $BRACT_HOME env var, ~/.bract default.
+ * @module @losoft/bract-cli/home
+ */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 

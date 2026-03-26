@@ -1,3 +1,8 @@
+/**
+ * @file backoff.ts
+ * Exponential backoff calculation for supervisor restart delays.
+ * @module @losoft/bract-supervisor/backoff
+ */
 export interface BackoffOptions {
   baseDelayMs?: number;
   maxBackoffMs?: number;

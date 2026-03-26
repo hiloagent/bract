@@ -1,3 +1,8 @@
+/**
+ * @file cmd-inbox.ts
+ * Implementation of `bract inbox` — lists pending and processed inbox messages.
+ * @module @losoft/bract-cli/cmd-inbox
+ */
 import { ProcessTable, listPending, read } from '@losoft/bract-runtime';
 import { join } from 'node:path';
 import { existsSync, readdirSync } from 'node:fs';

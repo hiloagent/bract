@@ -1,3 +1,8 @@
+/**
+ * @file cmd-send.ts
+ * Implementation of `bract send` — writes a message to an agent inbox.
+ * @module @losoft/bract-cli/cmd-send
+ */
 import { ProcessTable, send } from '@losoft/bract-runtime';
 import { join } from 'node:path';
 import { resolveBractHome } from './home.js';

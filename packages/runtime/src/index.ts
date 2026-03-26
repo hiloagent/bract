@@ -1,3 +1,12 @@
+/**
+ * @file index.ts
+ * Public API for @losoft/bract-runtime.
+ *
+ * Re-exports all stable public types and functions. Import from this module
+ * rather than from individual source files for forward-compatibility.
+ *
+ * @module @losoft/bract-runtime
+ */
 export { ProcessTable } from './process-table.js';
 export type { AgentEntry, AgentStatus } from './process-table.js';
 

@@ -1,5 +1,12 @@
 #!/usr/bin/env bun
 /**
+ * @file index.ts
+ * bract CLI entry point. Parses argv and dispatches to subcommands.
+ * Commands: ps | send | inbox | read
+ * Flags: --home <path> | --json | --quiet
+ * @module @losoft/bract-cli
+ */
+/**
  * bract CLI — entry point.
  *
  * Parsing strategy: no third-party parser. We walk argv manually so the

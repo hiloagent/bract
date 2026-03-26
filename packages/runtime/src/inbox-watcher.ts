@@ -1,3 +1,16 @@
+/**
+ * @file inbox-watcher.ts
+ * Polling-based inbox watcher for bract agents.
+ *
+ * InboxWatcher polls agent inbox directories at a fixed interval and emits
+ * a "message" event for each new .msg file found. Consumed files are moved
+ * to inbox/.processed/ to prevent re-delivery.
+ *
+ * Polling is used intentionally over filesystem events (inotify/FSEvents)
+ * for portability and predictability across Linux, macOS, and container environments.
+ *
+ * @module @losoft/bract-runtime/inbox-watcher
+ */
 import { EventEmitter } from 'node:events';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

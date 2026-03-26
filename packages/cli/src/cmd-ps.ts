@@ -1,3 +1,8 @@
+/**
+ * @file cmd-ps.ts
+ * Implementation of `bract ps` — lists all registered agents with status.
+ * @module @losoft/bract-cli/cmd-ps
+ */
 import { ProcessTable } from '@losoft/bract-runtime';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

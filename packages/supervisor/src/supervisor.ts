@@ -1,3 +1,12 @@
+/**
+ * @file supervisor.ts
+ * Supervisor — monitors agents and restarts them on crash with exponential backoff.
+ *
+ * Polls each registered agent pid and detects crashes. On crash emits agent:died,
+ * waits for backoff delay, then restarts (or emits agent:exhausted after maxRestarts).
+ *
+ * @module @losoft/bract-supervisor/supervisor
+ */
 import { EventEmitter } from 'node:events';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -1,3 +1,8 @@
+/**
+ * @file cmd-read.ts
+ * Implementation of `bract read` — displays outbox messages for an agent.
+ * @module @losoft/bract-cli/cmd-read
+ */
 import { ProcessTable, listPending, read } from '@losoft/bract-runtime';
 import { join } from 'node:path';
 import { relativeTime } from './format.js';

@@ -1,3 +1,14 @@
+/**
+ * @file process-table.ts
+ * Filesystem-backed agent registry for bract.
+ *
+ * The process table is a directory (`$BRACT_HOME/agents/`) where each agent
+ * has a subdirectory containing plain files: `status`, `model`, `pid`, `started_at`.
+ * Reading and writing these files is the only source of truth — no in-memory cache
+ * is trusted across process boundaries.
+ *
+ * @module @losoft/bract-runtime/process-table
+ */
 import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 

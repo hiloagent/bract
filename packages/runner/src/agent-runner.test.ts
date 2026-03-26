@@ -15,7 +15,7 @@ function mockFetch(reply: string) {
       JSON.stringify({ choices: [{ message: { content: reply } }] }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     ),
-  );
+  ) as unknown as typeof globalThis.fetch;
 }
 
 function inboxDir(home: string, name: string) {
@@ -91,7 +91,7 @@ describe('AgentRunner', () => {
 
   it('emits run:error when model call fails', async () => {
     const home = tmpHome();
-    globalThis.fetch = mock(async () => new Response('bad', { status: 500 }));
+    globalThis.fetch = mock(async () => new Response('bad', { status: 500 })) as unknown as typeof globalThis.fetch;
 
     const runner = new AgentRunner({ name: 'b', home, model: 'm' });
     await runner.start();
@@ -110,12 +110,12 @@ describe('AgentRunner', () => {
     const home = tmpHome();
     let capturedBody: any;
     globalThis.fetch = mock(async (_url: string, init: any) => {
-      capturedBody = JSON.parse(init.body);
+      capturedBody = JSON.parse(init.body as string);
       return new Response(
         JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
-    });
+    }) as unknown as typeof globalThis.fetch;
 
     const runner = new AgentRunner({
       name: 'c',

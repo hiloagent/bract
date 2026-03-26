@@ -1,3 +1,16 @@
+/**
+ * @file message.ts
+ * Core message format and filesystem I/O for bract agent inboxes and outboxes.
+ *
+ * A "message" is a plain JSON file written to an agent's inbox/ or outbox/ directory.
+ * Files are named with a high-resolution timestamp prefix so they sort chronologically.
+ * Consumed messages are moved to inbox/.processed/ rather than deleted, preserving history.
+ *
+ * All read/write operations use Bun's native file APIs (Bun.file / Bun.write).
+ * Directory operations (mkdir, readdir, rename) use node:fs — no Bun equivalent exists.
+ *
+ * @module @losoft/bract-runtime/message
+ */
 import { mkdirSync, existsSync, readdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 

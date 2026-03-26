@@ -1,3 +1,8 @@
+/**
+ * @file cli.test.ts
+ * Integration tests for bract CLI commands (ps, send, inbox, read).
+ * Tests run against a real tmp BRACT_HOME — no mocks of filesystem or runtime.
+ */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,8 +13,8 @@ import { cmdSend } from './cmd-send.js';
 import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
 
-/** Capture stdout/stderr from an async function. */
-async function capture(fn: () => Promise<void>): Promise<{ out: string; err: string }> {
+/** Capture stdout/stderr produced by an async function. */
+async function capture(fn: () => void | Promise<void>): Promise<{ out: string; err: string }> {
   const outChunks: string[] = [];
   const errChunks: string[] = [];
   const origOut = process.stdout.write.bind(process.stdout);
@@ -25,7 +30,7 @@ async function capture(fn: () => Promise<void>): Promise<{ out: string; err: str
   return { out: outChunks.join(''), err: errChunks.join('') };
 }
 
-/** Call async fn; intercept process.exit; return exit code. */
+/** Run an async fn, intercept process.exit, and return the exit code. */
 async function withExitOverride(fn: () => Promise<void>): Promise<number | undefined> {
   let code: number | undefined;
   const orig = process.exit.bind(process);
@@ -49,9 +54,7 @@ describe('bract ps', () => {
     pt = new ProcessTable(tmpHome);
   });
 
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); });
 
   it('prints "No agents" when empty', async () => {
     const { out } = await capture(() => cmdPs({ home: tmpHome }));
@@ -84,16 +87,13 @@ describe('bract send', () => {
     pt = new ProcessTable(tmpHome);
   });
 
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); });
 
   it('writes a message to the agent inbox', async () => {
     pt.register('scout', 'qwen2.5:3b');
     const { out } = await capture(() => cmdSend('scout', 'hello world', { home: tmpHome }));
     expect(out).toContain('sent');
     expect(out).toContain('scout');
-
     const inboxDir = join(tmpHome, 'agents', 'scout', 'inbox');
     const files = readdirSync(inboxDir).filter((f: string) => f.endsWith('.msg'));
     expect(files.length).toBe(1);
@@ -107,9 +107,9 @@ describe('bract send', () => {
   });
 
   it('exits with code 3 for unknown agent', async () => {
-    const code = await withExitOverride(() =>
-      capture(() => cmdSend('ghost', 'hi', { home: tmpHome })),
-    );
+    const code = await withExitOverride(async () => {
+      await capture(() => cmdSend('ghost', 'hi', { home: tmpHome }));
+    });
     expect(code).toBe(3);
   });
 });
@@ -123,15 +123,12 @@ describe('bract inbox', () => {
     pt = new ProcessTable(tmpHome);
   });
 
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); });
 
   it('shows pending messages', async () => {
     pt.register('scout', 'qwen2.5:3b');
     const inboxDir = join(tmpHome, 'agents', 'scout', 'inbox');
     await send(inboxDir, 'cli', 'scan the news');
-
     const { out } = await capture(() => cmdInbox('scout', { home: tmpHome }));
     expect(out).toContain('INBOX');
     expect(out).toContain('scout');
@@ -146,9 +143,9 @@ describe('bract inbox', () => {
   });
 
   it('exits with code 3 for unknown agent', async () => {
-    const code = await withExitOverride(() =>
-      capture(() => cmdInbox('ghost', { home: tmpHome })),
-    );
+    const code = await withExitOverride(async () => {
+      await capture(() => cmdInbox('ghost', { home: tmpHome }));
+    });
     expect(code).toBe(3);
   });
 });
@@ -162,9 +159,7 @@ describe('bract read', () => {
     pt = new ProcessTable(tmpHome);
   });
 
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
+  afterEach(() => { rmSync(tmpHome, { recursive: true, force: true }); });
 
   it('shows (empty) when outbox is empty', async () => {
     pt.register('scout', 'qwen2.5:3b');
@@ -178,7 +173,6 @@ describe('bract read', () => {
     const outboxDir = join(tmpHome, 'agents', 'scout', 'outbox');
     await send(outboxDir, 'scout', 'first reply');
     await send(outboxDir, 'scout', 'second reply');
-
     const { out } = await capture(() => cmdRead('scout', { home: tmpHome }));
     expect(out).toContain('second reply');
     expect(out).not.toContain('first reply');
@@ -189,16 +183,15 @@ describe('bract read', () => {
     const outboxDir = join(tmpHome, 'agents', 'scout', 'outbox');
     await send(outboxDir, 'scout', 'first reply');
     await send(outboxDir, 'scout', 'second reply');
-
     const { out } = await capture(() => cmdRead('scout', { home: tmpHome, all: true }));
     expect(out).toContain('first reply');
     expect(out).toContain('second reply');
   });
 
   it('exits with code 3 for unknown agent', async () => {
-    const code = await withExitOverride(() =>
-      capture(() => cmdRead('ghost', { home: tmpHome })),
-    );
+    const code = await withExitOverride(async () => {
+      await capture(() => cmdRead('ghost', { home: tmpHome }));
+    });
     expect(code).toBe(3);
   });
 });

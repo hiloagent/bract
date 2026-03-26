@@ -1,3 +1,14 @@
+/**
+ * @file agent-runner.ts
+ * AgentRunner — connects an agent inbox to a language model via OpenAI-compatible API.
+ *
+ * Reads incoming messages from the agent inbox directory, calls the configured
+ * model endpoint (Ollama by default), and writes the response to the outbox.
+ * Only one message is processed at a time — the inbox watcher is paused during
+ * inference and resumed immediately after, preventing queue pile-up.
+ *
+ * @module @losoft/bract-runner/agent-runner
+ */
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { InboxWatcher, reply, type MessageEvent } from '@losoft/bract-runtime';

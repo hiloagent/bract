@@ -1,3 +1,8 @@
+/**
+ * @file crash-record.ts
+ * Writes structured crash records to the agent crashes/ directory.
+ * @module @losoft/bract-supervisor/crash-record
+ */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';

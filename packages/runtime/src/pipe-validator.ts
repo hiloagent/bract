@@ -1,3 +1,16 @@
+/**
+ * @file pipe-validator.ts
+ * Compile-time validation for bract.yml agent pipe definitions.
+ *
+ * Detects two classes of errors in a fleet's pipe configuration:
+ *   1. Unknown pipe sources — a pipe references an agent name not defined in the fleet.
+ *   2. Circular pipes — a chain of pipes forms a cycle (A→B→C→A).
+ *      Detected via DFS three-colour algorithm (unvisited/in-progress/done).
+ *
+ * Used by the bract CLI at `bract validate` and at fleet load time.
+ *
+ * @module @losoft/bract-runtime/pipe-validator
+ */
 type NodeState = 'unvisited' | 'in-progress' | 'done';
 
 interface AgentPipeDef {
