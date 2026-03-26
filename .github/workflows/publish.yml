@@ -19,14 +19,14 @@ jobs:
       - run: bun test
       - name: Build packages
         run: |
-          bun run build --filter './packages/runtime'
-          bun run build --filter './packages/supervisor'
-          bun run build --filter './packages/runner'
+          cd packages/runtime    && bun run build
+          cd ../supervisor       && bun run build
+          cd ../runner           && bun run build
       - name: Publish to npm
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          cd packages/runtime  && bun publish --access public
-          cd ../supervisor     && bun publish --access public
-          cd ../runner         && bun publish --access public
+          cd packages/runtime    && bun publish --access public
+          cd ../supervisor       && bun publish --access public
+          cd ../runner           && bun publish --access public
