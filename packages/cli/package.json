@@ -3,17 +3,22 @@
   "version": "0.0.1",
   "type": "module",
   "bin": {
-    "bract": "./dist/index.js"
+    "bract": "./dist/bract"
   },
   "exports": {
     ".": {
       "bun": "./src/index.ts",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "node": "./dist/node/index.js",
+      "import": "./dist/node/index.js",
+      "types": "./dist/types/index.d.ts"
     }
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm && tsc --emitDeclarationOnly --outDir dist",
+    "build:bun": "bun build ./src/index.ts --outdir ./dist/bun --target bun",
+    "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist/types",
+    "build:cli": "bun build ./src/index.ts --outfile dist/bract --compile",
+    "build": "npm run build:bun && npm run build:node && npm run build:types && npm run build:cli",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

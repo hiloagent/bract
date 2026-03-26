@@ -5,12 +5,16 @@
   "exports": {
     ".": {
       "bun": "./src/index.ts",
-      "import": "./dist/index.js",
+      "node": "./dist/node/index.js",
+      "import": "./dist/node/index.js",
       "types": "./dist/index.d.ts"
     }
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm && tsc --emitDeclarationOnly --outDir dist",
+    "build:bun": "bun build ./src/index.ts --outdir ./dist/bun",
+    "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build": "npm run build:bun && npm run build:node && npm run build:types",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
