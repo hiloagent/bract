@@ -4,8 +4,9 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsc -b packages/runtime && tsc -b packages/runner && tsc -b packages/supervisor && tsc -b packages/cli",
-    "test": "node --test packages/cli/dist/cli.test.js"
+    "build": "bun run --filter './packages/*' build",
+    "test": "bun test",
+    "typecheck": "bun run --filter './packages/*' typecheck"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
