@@ -20,10 +20,9 @@
   "dependencies": {
     "@losoft/bract-runtime": "workspace:*"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "^1",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0"
   }
 }
