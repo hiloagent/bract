@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
