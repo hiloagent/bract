@@ -19,6 +19,49 @@ Per-package: `cd packages/<name> && bun test` or `bun run typecheck`.
 
 Run a single test by describe name: `bun test --match="Supervisor"`.
 
+## Build System
+
+Packages build to **two targets** for maximum compatibility:
+
+### Development (Bun workspace)
+- `"bun"` export condition → `./src/index.ts` (raw TypeScript)
+- Bun resolves dependencies directly, no compilation overhead
+- Fastest feedback loop for development
+
+### Distribution (npm/CDN)
+Each package outputs three directories after `bun run build`:
+- `dist/bun/` — Bun-optimized bundled output (`--target bun`)
+- `dist/node/` — Node.js-compatible output (`--target node --packages external`)
+- `dist/` — TypeScript declarations (via `tsc --emitDeclarationOnly`)
+
+Export conditions route consumers:
+- `"bun"` → `./src/index.ts` (workspace dev)
+- `"node"` → `./dist/node/index.js` (Node.js users)
+- `"import"` → `./dist/node/index.js` (fallback)
+- `"types"` → `./dist/index.d.ts` (type checkers)
+
+### Build Scripts (per package)
+```bash
+npm run build:bun    # Bun-optimized bundled output
+npm run build:node   # Node.js-compatible with packages external
+npm run build:types  # TypeScript declarations
+npm run build        # All three (default)
+```
+
+### CLI Special Case
+The CLI package compiles to a standalone Linux binary:
+```bash
+npm run build:cli    # bun build --compile → dist/bract executable
+```
+The `bin` field points to `./dist/bract`, making it runnable without Node.js or Bun installed.
+
+### Why Dual-Target?
+- **Bun**: Bundled output loses `node:fs` imports (bundled as empty object), breaks Node.js compatibility
+- **Node.js**: Keeping packages external (`--packages external`) works for both Node.js and Bun at runtime
+- **Development**: Bun dev always uses source TypeScript; compiled outputs only for npm distribution
+
+See ADR-009 for detailed reasoning.
+
 ## Pitfalls
 
 **Build fails with "Could not resolve" workspace packages**
