@@ -10,7 +10,7 @@ export interface InboxOptions {
   json?: boolean;
 }
 
-export function cmdInbox(agentName: string, opts: InboxOptions = {}): void {
+export async function cmdInbox(agentName: string, opts: InboxOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);
   const entry = pt.get(agentName);
@@ -21,10 +21,8 @@ export function cmdInbox(agentName: string, opts: InboxOptions = {}): void {
   }
 
   const inboxDir = join(entry.dir, 'inbox');
-
   const pending = listPending(inboxDir);
 
-  // Optionally also show processed messages
   const processed: string[] = [];
   if (opts.all) {
     const processedDir = join(inboxDir, '.processed');
@@ -39,14 +37,10 @@ export function cmdInbox(agentName: string, opts: InboxOptions = {}): void {
   }
 
   if (opts.json) {
-    const msgs = [
-      ...pending.map((f) => ({ ...read(inboxDir, f), _status: 'pending', _file: f })),
-      ...processed.map((f) => ({
-        ...read(inboxDir, f),
-        _status: 'processed',
-        _file: f,
-      })),
-    ];
+    const msgs = await Promise.all([
+      ...pending.map(async (f) => ({ ...(await read(inboxDir, f)), _status: 'pending', _file: f })),
+      ...processed.map(async (f) => ({ ...(await read(inboxDir, f)), _status: 'processed', _file: f })),
+    ]);
     process.stdout.write(JSON.stringify(msgs, null, 2) + '\n');
     return;
   }
@@ -64,9 +58,9 @@ export function cmdInbox(agentName: string, opts: InboxOptions = {}): void {
     return;
   }
 
-  function printMsg(file: string, dir: string, tag?: string): void {
+  async function printMsg(file: string, dir: string, tag?: string): Promise<void> {
     try {
-      const msg = read(dir, file);
+      const msg = await read(dir, file);
       const preview = msg.body.length > 80 ? msg.body.slice(0, 77) + '...' : msg.body;
       const label = tag ? `[${tag}] ` : '';
       process.stdout.write(
@@ -77,6 +71,6 @@ export function cmdInbox(agentName: string, opts: InboxOptions = {}): void {
     }
   }
 
-  for (const f of pending) printMsg(f, inboxDir);
-  for (const f of processed) printMsg(f, inboxDir, 'processed');
+  for (const f of pending) await printMsg(f, inboxDir);
+  for (const f of processed) await printMsg(f, inboxDir, 'processed');
 }

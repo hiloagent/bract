@@ -1,5 +1,4 @@
-import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,34 +8,34 @@ import { cmdSend } from './cmd-send.js';
 import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
 
-/** Capture stdout/stderr from a synchronous function. */
-function capture(fn: () => void): { out: string; err: string } {
+/** Capture stdout/stderr from an async function. */
+async function capture(fn: () => Promise<void>): Promise<{ out: string; err: string }> {
   const outChunks: string[] = [];
   const errChunks: string[] = [];
   const origOut = process.stdout.write.bind(process.stdout);
   const origErr = process.stderr.write.bind(process.stderr);
-  (process.stdout as NodeJS.WriteStream).write = (s: string) => { outChunks.push(s); return true; };
-  (process.stderr as NodeJS.WriteStream).write = (s: string) => { errChunks.push(s); return true; };
+  (process.stdout as any).write = (s: string) => { outChunks.push(s); return true; };
+  (process.stderr as any).write = (s: string) => { errChunks.push(s); return true; };
   try {
-    fn();
+    await fn();
   } finally {
-    (process.stdout as NodeJS.WriteStream).write = origOut as typeof process.stdout.write;
-    (process.stderr as NodeJS.WriteStream).write = origErr as typeof process.stderr.write;
+    (process.stdout as any).write = origOut;
+    (process.stderr as any).write = origErr;
   }
   return { out: outChunks.join(''), err: errChunks.join('') };
 }
 
-/** Call fn; intercept process.exit; return the exit code. */
-function withExitOverride(fn: () => void): number | undefined {
+/** Call async fn; intercept process.exit; return exit code. */
+async function withExitOverride(fn: () => Promise<void>): Promise<number | undefined> {
   let code: number | undefined;
   const orig = process.exit.bind(process);
-  process.exit = (c?: number) => { code = c; throw new Error(`__exit_${c}`); };
+  (process as any).exit = (c?: number) => { code = c; throw new Error(`__exit_${c}`); };
   try {
-    fn();
+    await fn();
   } catch (e) {
     if (!(e instanceof Error && e.message.startsWith('__exit_'))) throw e;
   } finally {
-    process.exit = orig;
+    (process as any).exit = orig;
   }
   return code;
 }
@@ -54,25 +53,25 @@ describe('bract ps', () => {
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('prints "No agents" when empty', () => {
-    const { out } = capture(() => cmdPs({ home: tmpHome }));
-    assert.ok(out.includes('No agents'));
+  it('prints "No agents" when empty', async () => {
+    const { out } = await capture(() => cmdPs({ home: tmpHome }));
+    expect(out).toContain('No agents');
   });
 
-  it('lists registered agents', () => {
+  it('lists registered agents', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    const { out } = capture(() => cmdPs({ home: tmpHome }));
-    assert.ok(out.includes('scout'));
-    assert.ok(out.includes('qwen2.5:3b'));
-    assert.ok(out.includes('idle'));
+    const { out } = await capture(() => cmdPs({ home: tmpHome }));
+    expect(out).toContain('scout');
+    expect(out).toContain('qwen2.5:3b');
+    expect(out).toContain('idle');
   });
 
-  it('outputs valid JSON with --json flag', () => {
+  it('outputs valid JSON with --json flag', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    const { out } = capture(() => cmdPs({ home: tmpHome, json: true }));
+    const { out } = await capture(() => cmdPs({ home: tmpHome, json: true }));
     const parsed = JSON.parse(out) as Array<{ name: string }>;
-    assert.ok(Array.isArray(parsed));
-    assert.equal(parsed[0]?.name, 'scout');
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0]?.name).toBe('scout');
   });
 });
 
@@ -89,29 +88,29 @@ describe('bract send', () => {
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('writes a message to the agent inbox', () => {
+  it('writes a message to the agent inbox', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    const { out } = capture(() => cmdSend('scout', 'hello world', { home: tmpHome }));
-    assert.ok(out.includes('sent'));
-    assert.ok(out.includes('scout'));
+    const { out } = await capture(() => cmdSend('scout', 'hello world', { home: tmpHome }));
+    expect(out).toContain('sent');
+    expect(out).toContain('scout');
 
     const inboxDir = join(tmpHome, 'agents', 'scout', 'inbox');
     const files = readdirSync(inboxDir).filter((f: string) => f.endsWith('.msg'));
-    assert.equal(files.length, 1);
+    expect(files.length).toBe(1);
   });
 
-  it('respects --from option', () => {
+  it('respects --from option', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    capture(() => cmdSend('scout', 'ping', { home: tmpHome, from: 'orchestrator' }));
-    const { out } = capture(() => cmdInbox('scout', { home: tmpHome }));
-    assert.ok(out.includes('orchestrator'));
+    await capture(() => cmdSend('scout', 'ping', { home: tmpHome, from: 'orchestrator' }));
+    const { out } = await capture(() => cmdInbox('scout', { home: tmpHome }));
+    expect(out).toContain('orchestrator');
   });
 
-  it('exits with code 3 for unknown agent', () => {
-    const code = withExitOverride(() =>
+  it('exits with code 3 for unknown agent', async () => {
+    const code = await withExitOverride(() =>
       capture(() => cmdSend('ghost', 'hi', { home: tmpHome })),
     );
-    assert.equal(code, 3);
+    expect(code).toBe(3);
   });
 });
 
@@ -128,29 +127,29 @@ describe('bract inbox', () => {
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('shows pending messages', () => {
+  it('shows pending messages', async () => {
     pt.register('scout', 'qwen2.5:3b');
     const inboxDir = join(tmpHome, 'agents', 'scout', 'inbox');
-    send(inboxDir, 'cli', 'scan the news');
+    await send(inboxDir, 'cli', 'scan the news');
 
-    const { out } = capture(() => cmdInbox('scout', { home: tmpHome }));
-    assert.ok(out.includes('INBOX'));
-    assert.ok(out.includes('scout'));
-    assert.ok(out.includes('scan the news'));
-    assert.ok(out.includes('cli'));
+    const { out } = await capture(() => cmdInbox('scout', { home: tmpHome }));
+    expect(out).toContain('INBOX');
+    expect(out).toContain('scout');
+    expect(out).toContain('scan the news');
+    expect(out).toContain('cli');
   });
 
-  it('shows (empty) when no messages', () => {
+  it('shows (empty) when no messages', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    const { out } = capture(() => cmdInbox('scout', { home: tmpHome }));
-    assert.ok(out.includes('(empty)'));
+    const { out } = await capture(() => cmdInbox('scout', { home: tmpHome }));
+    expect(out).toContain('(empty)');
   });
 
-  it('exits with code 3 for unknown agent', () => {
-    const code = withExitOverride(() =>
+  it('exits with code 3 for unknown agent', async () => {
+    const code = await withExitOverride(() =>
       capture(() => cmdInbox('ghost', { home: tmpHome })),
     );
-    assert.equal(code, 3);
+    expect(code).toBe(3);
   });
 });
 
@@ -167,39 +166,39 @@ describe('bract read', () => {
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('shows (empty) when outbox is empty', () => {
+  it('shows (empty) when outbox is empty', async () => {
     pt.register('scout', 'qwen2.5:3b');
-    const { out } = capture(() => cmdRead('scout', { home: tmpHome }));
-    assert.ok(out.includes('OUTBOX'));
-    assert.ok(out.includes('(empty)'));
+    const { out } = await capture(() => cmdRead('scout', { home: tmpHome }));
+    expect(out).toContain('OUTBOX');
+    expect(out).toContain('(empty)');
   });
 
-  it('shows only the latest outbox message by default', () => {
-    pt.register('scout', 'qwen2.5:3b');
-    const outboxDir = join(tmpHome, 'agents', 'scout', 'outbox');
-    send(outboxDir, 'scout', 'first reply');
-    send(outboxDir, 'scout', 'second reply');
-
-    const { out } = capture(() => cmdRead('scout', { home: tmpHome }));
-    assert.ok(out.includes('second reply'));
-    assert.ok(!out.includes('first reply'));
-  });
-
-  it('shows all messages with --all', () => {
+  it('shows only the latest outbox message by default', async () => {
     pt.register('scout', 'qwen2.5:3b');
     const outboxDir = join(tmpHome, 'agents', 'scout', 'outbox');
-    send(outboxDir, 'scout', 'first reply');
-    send(outboxDir, 'scout', 'second reply');
+    await send(outboxDir, 'scout', 'first reply');
+    await send(outboxDir, 'scout', 'second reply');
 
-    const { out } = capture(() => cmdRead('scout', { home: tmpHome, all: true }));
-    assert.ok(out.includes('first reply'));
-    assert.ok(out.includes('second reply'));
+    const { out } = await capture(() => cmdRead('scout', { home: tmpHome }));
+    expect(out).toContain('second reply');
+    expect(out).not.toContain('first reply');
   });
 
-  it('exits with code 3 for unknown agent', () => {
-    const code = withExitOverride(() =>
+  it('shows all messages with --all', async () => {
+    pt.register('scout', 'qwen2.5:3b');
+    const outboxDir = join(tmpHome, 'agents', 'scout', 'outbox');
+    await send(outboxDir, 'scout', 'first reply');
+    await send(outboxDir, 'scout', 'second reply');
+
+    const { out } = await capture(() => cmdRead('scout', { home: tmpHome, all: true }));
+    expect(out).toContain('first reply');
+    expect(out).toContain('second reply');
+  });
+
+  it('exits with code 3 for unknown agent', async () => {
+    const code = await withExitOverride(() =>
       capture(() => cmdRead('ghost', { home: tmpHome })),
     );
-    assert.equal(code, 3);
+    expect(code).toBe(3);
   });
 });

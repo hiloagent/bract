@@ -51,7 +51,7 @@ describe('AgentRunner', () => {
 
     await runner.start();
 
-    send(inboxDir(home, 'test-agent'), 'user', 'ping');
+    await send(inboxDir(home, 'test-agent'), 'user', 'ping');
 
     // Wait for watcher to pick it up
     await new Promise<void>((resolve) => {
@@ -76,7 +76,7 @@ describe('AgentRunner', () => {
     const runner = new AgentRunner({ name: 'a', home, model: 'm' });
     await runner.start();
 
-    send(inboxDir(home, 'a'), 'user', 'ping');
+    await send(inboxDir(home, 'a'), 'user', 'ping');
 
     const event = await new Promise<any>((resolve) => {
       runner.on('run', resolve);
@@ -96,7 +96,7 @@ describe('AgentRunner', () => {
     const runner = new AgentRunner({ name: 'b', home, model: 'm' });
     await runner.start();
 
-    send(inboxDir(home, 'b'), 'user', 'ping');
+    await send(inboxDir(home, 'b'), 'user', 'ping');
 
     const event = await new Promise<any>((resolve) => {
       runner.on('run:error', resolve);
@@ -124,7 +124,7 @@ describe('AgentRunner', () => {
       system: 'You are helpful.',
     });
     await runner.start();
-    send(inboxDir(home, 'c'), 'user', 'hi');
+    await send(inboxDir(home, 'c'), 'user', 'hi');
 
     await new Promise<void>((resolve) => { runner.on('run', () => resolve()); });
     runner.stop();

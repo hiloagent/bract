@@ -83,16 +83,16 @@ export class InboxWatcher extends EventEmitter {
     }
 
     for (const agentName of agents) {
-      this.pollAgent(agentName);
+      void this.pollAgent(agentName);
     }
   }
 
-  protected pollAgent(agentName: string): void {
+  protected async pollAgent(agentName: string): Promise<void> {
     const inboxDir = join(this.root, agentName, 'inbox');
     const pending = listPending(inboxDir);
     for (const filename of pending) {
       try {
-        const message = consume(inboxDir, filename);
+        const message = await consume(inboxDir, filename);
         const event: MessageEvent = { agentName, filename, message };
         this.emit('message', event);
       } catch (err) {

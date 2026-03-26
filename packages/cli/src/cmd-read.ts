@@ -9,7 +9,7 @@ export interface ReadOptions {
   json?: boolean;
 }
 
-export function cmdRead(agentName: string, opts: ReadOptions = {}): void {
+export async function cmdRead(agentName: string, opts: ReadOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);
   const entry = pt.get(agentName);
@@ -23,10 +23,8 @@ export function cmdRead(agentName: string, opts: ReadOptions = {}): void {
   const files = listPending(outboxDir);
 
   if (opts.json) {
-    const msgs = files.map((f) => ({ ...read(outboxDir, f), _file: f }));
-    process.stdout.write(
-      JSON.stringify(opts.all ? msgs : msgs.slice(-1), null, 2) + '\n',
-    );
+    const msgs = await Promise.all(files.map(async (f) => ({ ...(await read(outboxDir, f)), _file: f })));
+    process.stdout.write(JSON.stringify(opts.all ? msgs : msgs.slice(-1), null, 2) + '\n');
     return;
   }
 
@@ -36,17 +34,12 @@ export function cmdRead(agentName: string, opts: ReadOptions = {}): void {
   }
 
   const toShow = opts.all ? files : files.slice(-1);
-
-  process.stdout.write(
-    `OUTBOX — ${agentName} (showing ${toShow.length} of ${files.length})\n\n`,
-  );
+  process.stdout.write(`OUTBOX — ${agentName} (showing ${toShow.length} of ${files.length})\n\n`);
 
   for (const f of toShow) {
     try {
-      const msg = read(outboxDir, f);
-      process.stdout.write(
-        `  ${f}\n  ${relativeTime(msg.ts)}  from: ${msg.from}\n\n${msg.body}\n\n`,
-      );
+      const msg = await read(outboxDir, f);
+      process.stdout.write(`  ${f}\n  ${relativeTime(msg.ts)}  from: ${msg.from}\n\n${msg.body}\n\n`);
     } catch {
       process.stdout.write(`  ${f}  (unreadable)\n\n`);
     }

@@ -1,13 +1,5 @@
-import {
-  mkdirSync,
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  readdirSync,
-  renameSync,
-} from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
 
 /** Current message schema version. Increment when the shape changes. */
 export const MESSAGE_VERSION = 1 as const;
@@ -23,21 +15,22 @@ export interface Message {
 }
 
 function messageFilename(): string {
-  const ns = BigInt(Date.now()) * 1_000_000n;
-  const rnd = randomBytes(8).toString('hex');
+  // performance.now() gives sub-millisecond precision — ensures sort order matches send order
+  const ns = BigInt(Math.floor(performance.now() * 1_000_000));
+  const rnd = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   return `${ns}-${rnd}.msg`;
 }
 
 function generateId(): string {
-  return randomBytes(12).toString('hex');
+  return crypto.randomUUID().replace(/-/g, '');
 }
 
-export function send(
+export async function send(
   inboxDir: string,
   from: string,
   body: string,
   metadata: Record<string, unknown> = {},
-): Message {
+): Promise<Message> {
   mkdirSync(inboxDir, { recursive: true });
 
   const msg: Message = {
@@ -50,16 +43,16 @@ export function send(
   };
 
   const filename = messageFilename();
-  writeFileSync(join(inboxDir, filename), JSON.stringify(msg, null, 2) + '\n', 'utf8');
+  await Bun.write(join(inboxDir, filename), JSON.stringify(msg, null, 2) + '\n');
   return msg;
 }
 
-export function reply(
+export async function reply(
   outboxDir: string,
   from: string,
   body: string,
   metadata: Record<string, unknown> = {},
-): Message {
+): Promise<Message> {
   return send(outboxDir, from, body, metadata);
 }
 
@@ -75,8 +68,8 @@ export function listPending(dir: string): string[] {
  * - Missing `v` → normalised to v:1 (legacy compat)
  * - `v` newer than MESSAGE_VERSION → throws (upgrade bract)
  */
-export function read(dir: string, filename: string): Message {
-  const raw = readFileSync(join(dir, filename), 'utf8');
+export async function read(dir: string, filename: string): Promise<Message> {
+  const raw = await Bun.file(join(dir, filename)).text();
   const parsed = JSON.parse(raw) as Partial<Message>;
   const v = parsed.v ?? 1;
 
@@ -90,8 +83,8 @@ export function read(dir: string, filename: string): Message {
   return { ...parsed, v: MESSAGE_VERSION } as Message;
 }
 
-export function consume(dir: string, filename: string): Message {
-  const msg = read(dir, filename);
+export async function consume(dir: string, filename: string): Promise<Message> {
+  const msg = await read(dir, filename);
   const processedDir = join(dir, '.processed');
   mkdirSync(processedDir, { recursive: true });
   renameSync(join(dir, filename), join(processedDir, filename));

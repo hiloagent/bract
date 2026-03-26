@@ -104,7 +104,7 @@ export class AgentRunner extends EventEmitter {
 
     try {
       const responseText = await this.callModel(message.body);
-      reply(outboxDir, agentName, responseText, { replyTo: message.id });
+      await reply(outboxDir, agentName, responseText, { replyTo: message.id });
 
       const runEvent: RunEvent = {
         agentName,

@@ -7,7 +7,7 @@ export interface SendOptions {
   from?: string;
 }
 
-export function cmdSend(agentName: string, body: string, opts: SendOptions = {}): void {
+export async function cmdSend(agentName: string, body: string, opts: SendOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);
   const entry = pt.get(agentName);
@@ -19,7 +19,7 @@ export function cmdSend(agentName: string, body: string, opts: SendOptions = {})
 
   const from = opts.from ?? 'cli';
   const inboxDir = join(entry.dir, 'inbox');
-  const msg = send(inboxDir, from, body);
+  const msg = await send(inboxDir, from, body);
 
   process.stdout.write(`sent  ${msg.id}  →  ${agentName}\n`);
 }

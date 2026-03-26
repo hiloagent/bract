@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --test dist/cli.test.js"
+    "test": "bun test"
   },
   "dependencies": {
     "@losoft/bract-runtime": "workspace:*"
