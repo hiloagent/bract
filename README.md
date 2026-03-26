@@ -1,275 +1,280 @@
 # bract
 
-> A local-first agent runtime where agents work like Unix processes.
+> The leaf that wraps a flower before it opens — scaffolding that enables growth, then disappears.
+
+A local-first agent runtime. Agents are processes. All state lives in the filesystem. Nothing is hidden.
 
 ---
 
-## What is bract?
+## The problem with agent frameworks
 
-bract is an agent runtime built around a single mental model: **agents are processes**.
+Most frameworks treat agents as function calls: input goes in, output comes out, nothing persists. They optimise for demos. When something goes wrong at 3am, there is no process table to inspect, no filesystem to read, no way to understand what happened.
 
-Just like a Unix process has a PID, a working directory, stdin/stdout, environment variables, and an exit code — a bract agent has all of that, plus a structured state directory that lives entirely in your filesystem.
+bract does the opposite.
 
-There is no hidden cloud state. No opaque orchestration layer. Everything an agent is, does, and remembers is visible as files on your disk.
+## Core idea
+
+An agent is a long-running process. It has an identity, a working directory, an inbox, and an outbox. Agents communicate by writing files. The supervisor watches them and restarts on crash. You can observe everything with standard Unix tools.
 
 ```
-~/.bract/agents/
-├── 7a2f/                     # agent PID (short hash)
-│   ├── meta.json             # name, model, created_at, status
-│   ├── env                   # environment variables
-│   ├── cwd -> /workspace/foo # symlink to working directory
-│   ├── inbox/                # pending messages/tasks
-│   ├── outbox/               # completed outputs
-│   ├── memory/               # persistent memory files
-│   ├── stdout                # live log of agent output
-│   └── stderr                # errors and warnings
+$BRACT_HOME/
+  agents/
+    my-agent/
+      pid          # current process id
+      status       # running | idle | dead
+      model        # model in use
+      inbox/       # drop a .msg file here to send a message
+      outbox/      # agent writes responses here
+      memory/      # persistent key-value state
+      logs/        # append-only structured log, one file per day
+      crashes/     # crash records (if any)
+  supervisor.pid   # supervisor process id
+  pipes/           # active agent-to-agent wiring
 ```
 
 ---
 
-## Design Principles
+## Getting started
 
-**1. Local-first.** Your agents run on your machine. State lives in your filesystem. Nothing requires a network unless the task does.
+### Prerequisites
 
-**2. Unix-native.** Agents compose with pipes, redirects, `grep`, `watch`, `tail -f`. The process model is not a metaphor — it's the actual interface.
+- [Bun](https://bun.sh) 1.1+
+- [Ollama](https://ollama.com) running locally (or an Anthropic/OpenRouter API key)
 
-**3. Observable by default.** At any moment you can `cat`, `ls`, or `watch` the state of any running agent. No dashboards needed.
+### Install
 
-**4. Minimal protocol.** Agents communicate through structured files (JSON, NDJSON, plain text). The wire format is the storage format.
+```sh
+bun install -g bract
+```
 
-**5. Composable.** Agents can spawn child agents, forward their inbox, or be piped into each other. Orchestration is just file I/O.
+### Start a single agent
 
----
+```sh
+# Pull a model (if using Ollama)
+ollama pull qwen2.5:3b
 
-## Quick Start
+# Start an agent
+bract spawn my-agent --model qwen2.5:3b --system "You are a helpful assistant."
 
-```bash
-# Install
-npm install -g bract
+# Send it a message
+bract send my-agent "What is the capital of France?"
 
-# Spawn an agent
-bract spawn --name researcher --model claude-sonnet-4-6
+# Read the response
+bract read my-agent
 
-# Send it a task
-echo "What is the capital of France?" | bract write 7a2f
+# Watch its log
+bract log my-agent --follow
+```
 
-# Watch its output
-bract tail 7a2f
+### Run a fleet
 
-# Check the process table
+Create a `bract.yml` in any directory:
+
+```yaml
+version: 1
+
+agents:
+  - name: researcher
+    model: qwen3.5:9b
+    system: |
+      You are a research assistant. When given a topic, search for recent
+      developments and write a concise summary with your analysis.
+    restart: always
+
+  - name: notify
+    model: qwen2.5:3b
+    system: |
+      You receive research summaries. Send a Telegram message with
+      the key points in 3 bullet points.
+    env:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+    pipes:
+      - from: researcher
+```
+
+Then:
+
+```sh
+bract up
 bract ps
-
-# Kill it
-bract kill 7a2f
+bract send researcher "Latest developments in fusion energy"
+bract read notify --follow
 ```
 
 ---
 
-## The Process Model
+## CLI
 
-### Spawning
+```sh
+# Fleet
+bract up                          # start all agents from bract.yml
+bract down                        # stop all agents
+bract ps                          # list agents + status
 
-```bash
-bract spawn [options]
-  --name <name>        Human-readable name
-  --model <model>      LLM to use (default: claude-sonnet-4-6)
-  --cwd <path>         Working directory (default: current dir)
-  --env <KEY=VAL>      Environment variable (repeatable)
-  --prompt <text>      System prompt or path to .md file
-  --memory <path>      Pre-load memory from directory
-  --parent <pid>       Spawn as child of another agent
+# Lifecycle
+bract spawn <name> --model <m>    # start a single agent
+bract kill <name>                 # stop an agent
+bract restart <name>              # restart an agent
+
+# Messaging
+bract send <name> "<message>"     # send a message
+bract read <name>                 # read latest outbox message
+bract inbox <name>                # show pending inbox messages
+bract pipe <from> <to>            # wire two agents together
+
+# Observation
+bract log <name> --follow         # stream agent logs
+bract memory <name>               # read/write agent memory
+
+# Maintenance
+bract validate                    # lint bract.yml
+bract gc                          # clean up old logs and processed messages
+bract status                      # supervisor health
 ```
 
-Every spawned agent gets:
-- A short hash PID (e.g. `7a2f`)
-- A state directory at `~/.bract/agents/<pid>/`
-- A running process that reads from its inbox
-
-### The Inbox/Outbox Pattern
-
-Agents receive work via their **inbox** — a directory of message files:
-
-```
-inbox/
-├── 0001.json    # {"type": "task", "content": "...", "from": "user"}
-├── 0002.json    # {"type": "task", "content": "...", "from": "a3bc"}
-```
-
-Each message is a JSON file. When processed, it moves to `outbox/` with a result:
-
-```
-outbox/
-├── 0001.json    # {"status": "done", "result": "Paris", "elapsed_ms": 1240}
-```
-
-### stdin/stdout
-
-For interactive or piped use:
-
-```bash
-# Pipe a prompt in
-echo "Summarize this file" | bract run --model claude-haiku-4-5 < report.txt
-
-# Run a one-shot agent with a file as stdin
-bract run --prompt analyst.md < data.csv
-
-# Chain agents
-bract run --prompt extract.md < raw.txt | bract run --prompt summarize.md
-```
-
-`bract run` is ephemeral — no persistent state directory. Good for scripting.
-
-### Environment
-
-Agents inherit environment variables from their parent (the shell or parent agent), filtered by a whitelist. Additional vars can be set at spawn time.
-
-The `env` file in the agent directory is plain `KEY=VALUE` format, readable with any standard tool.
+See [`docs/cli-spec.md`](docs/cli-spec.md) for the full command reference.
 
 ---
 
-## Process Table
+## Why filesystem
 
-```bash
-bract ps
-```
-
-```
-PID    NAME         STATUS    MODEL                  UPTIME   TASKS
-7a2f   researcher   running   claude-sonnet-4-6      4m32s    3/5
-a3bc   analyst      idle      claude-haiku-4-5       12m01s   8/8
-f91e   writer       waiting   claude-opus-4-6        2m15s    1/2
-```
-
-`bract ps` reads directly from `~/.bract/agents/*/meta.json`. No daemon required.
+- Any language can read a file. No SDK required to observe an agent.
+- `tail -f logs/my-agent` works. `ls inbox/` works. `cat status` works.
+- State survives process crashes. Inbox messages are not lost.
+- Works offline. No cloud dependency. No API key required to run.
+- Composable with Unix tools: `watch`, `grep`, `jq`, `cron`.
 
 ---
 
-## Memory Model
+## Pluggable models
 
-Agents have two memory layers:
+```sh
+# Local via Ollama (default)
+bract spawn my-agent --model qwen3.5:9b
 
-**Working memory** — the active context window. Managed automatically.
+# Remote via Anthropic
+ANTHROPIC_API_KEY=sk-... bract spawn my-agent --model anthropic/claude-sonnet-4-6
 
-**Persistent memory** — files in `~/.bract/agents/<pid>/memory/`. The agent can read and write these explicitly. They survive restarts. They're plain text or JSON — you can edit them with any editor.
-
-```bash
-# See what an agent remembers
-ls ~/.bract/agents/7a2f/memory/
-cat ~/.bract/agents/7a2f/memory/user_preferences.md
-
-# Inject a memory
-echo "User prefers bullet points." > ~/.bract/agents/7a2f/memory/style.md
+# Remote via OpenRouter
+OPENROUTER_API_KEY=sk-... bract spawn my-agent --model openrouter/qwen/qwen-2.5-72b-instruct
 ```
 
-Memory files follow the same format as [Claude Code's auto-memory](https://docs.anthropic.com) — markdown with YAML frontmatter. This is intentional: agents running inside Claude Code can share memory directly.
+See [`docs/adrs/ADR-006-model-routing.md`](docs/adrs/ADR-006-model-routing.md) for the full model routing spec.
 
 ---
 
-## Signals
+## Architecture
 
-Like Unix processes, agents respond to signals:
-
-```bash
-bract kill <pid>          # SIGTERM — graceful shutdown (agent saves state)
-bract kill -9 <pid>       # SIGKILL — immediate stop
-bract pause <pid>         # SIGSTOP — suspend processing
-bract resume <pid>        # SIGCONT — resume processing
-bract reload <pid>        # SIGHUP — reload prompt/config without restart
+```
+┌──────────────────────────────────────────────────────┐
+│  bract supervisor (single long-running process)      │
+│                                                      │
+│  ┌────────────┐   ┌────────────┐   ┌─────────────┐  │
+│  │ inbox      │   │ agent A    │   │ pipe engine │  │
+│  │ watcher    │──▶│ (spawned)  │──▶│ (outbox →   │  │
+│  │ (polling)  │   │            │   │  inbox)     │  │
+│  └────────────┘   └────────────┘   └─────────────┘  │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ health monitor (heartbeat every 5s)            │  │
+│  │  → detects dead agents                         │  │
+│  │  → applies restart policy with backoff         │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+                        │
+                        │ reads/writes
+                        ▼
+┌──────────────────────────────────────────────────────┐
+│  $BRACT_HOME/agents/{name}/                          │
+│    pid  status  inbox/  outbox/  memory/  logs/      │
+└──────────────────────────────────────────────────────┘
+                        │
+                        │ any process can read/write
+                        ▼
+              standard Unix tools
+              cat, tail, grep, jq, watch
 ```
 
-On SIGTERM, the agent writes a final summary to `outbox/final.json` before exiting.
+Each agent is a spawned child process. The supervisor watches for crashes and
+restarts with exponential backoff. If the supervisor dies, agents keep running —
+they just won't be restarted until the supervisor comes back.
 
 ---
 
-## Pipes and Composition
+## Extension
 
-bract agents compose naturally:
+Plugins are sidecar processes or in-process hooks. The filesystem is the interface —
+a plugin just reads and writes the same files an agent would.
 
-```bash
-# Run a team: researcher feeds writer
-bract spawn --name researcher --prompt researcher.md
-bract spawn --name writer --prompt writer.md
+```typescript
+// bract.config.ts — register custom tools, hooks, or providers
+import type { BractConfig } from 'bract'
 
-# Wire them together
-bract pipe researcher writer   # researcher outbox → writer inbox
-
-# Or use Unix pipes for one-shot chains
-bract run --prompt research.md <<< "quantum computing" \
-  | bract run --prompt write_post.md \
-  > post.md
+export default {
+  tools: [
+    {
+      name: 'web_search',
+      description: 'Search the web',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query']
+      },
+      handler: async ({ query }) => { /* ... */ }
+    }
+  ],
+  hooks: {
+    afterMessage: async ({ agent, response }) => {
+      // called after every agent response
+    }
+  }
+} satisfies BractConfig
 ```
 
-### Agent Groups
-
-A **group** is a named collection of agents that share a common inbox:
-
-```bash
-bract group create --name team-alpha 7a2f a3bc f91e
-echo "Analyze Q1 results and write a summary" | bract write team-alpha
-```
-
-Messages sent to a group are broadcast to all members.
+See [`docs/adrs/ADR-005-plugin-model.md`](docs/adrs/ADR-005-plugin-model.md) for details.
 
 ---
 
-## Scheduling
+## Examples
 
-```bash
-# Run an agent on a cron schedule
-bract schedule --cron "0 9 * * *" --prompt daily_brief.md --name morning-brief
-
-# One-shot future run
-bract schedule --at "2026-04-01T09:00:00" --prompt april-fools.md
-```
-
-Scheduled agents appear in `bract ps` with a `scheduled` status and next-run time.
-
----
-
-## Plugins
-
-bract has a minimal plugin system built on executables:
-
-```bash
-~/.bract/plugins/
-├── bract-search/     # provides the `search` tool to agents
-├── bract-browse/     # provides the `browse` tool
-└── bract-notify/     # sends system notifications on agent events
-```
-
-Any executable in `~/.bract/plugins/` that follows the bract tool protocol becomes available to agents as a callable tool. See [Plugin Protocol](docs/plugin-protocol.md).
-
----
-
-## Configuration
-
-```
-~/.bract/config.json
-```
-
-```json
-{
-  "default_model": "claude-sonnet-4-6",
-  "api_key_env": "ANTHROPIC_API_KEY",
-  "state_dir": "~/.bract/agents",
-  "plugins_dir": "~/.bract/plugins",
-  "log_level": "info",
-  "inbox_poll_ms": 500
-}
-```
-
-Project-level config at `.bract.json` in any directory overrides global config.
-
----
-
-## Why "bract"?
-
-A bract is a leaf-like structure that surrounds or subtends a flower — it's the scaffolding that holds things in place while growth happens. The name reflects the project's role: bract doesn't do the thinking. It just holds the structure so agents can.
+- [`examples/research-fleet/`](examples/research-fleet/) — Four agents running a continuous research pipeline on a single GPU
 
 ---
 
 ## Status
 
-Early design phase. APIs will change. Contributions welcome.
+Early design phase. Core runtime being built.
 
-See [docs/adrs/](docs/adrs/) for architecture decisions.
+- [x] Filesystem layout ([ADR-001](docs/adrs/ADR-001-filesystem-as-process-table.md))
+- [x] Message module (inbox/outbox read/write, consume-to-processed)
+- [x] Inbox watcher (filesystem polling → agent trigger, [ADR-002](docs/adrs/ADR-002-inbox-watcher-polling.md))
+- [ ] Agent spawner
+- [ ] Supervisor with restart policy ([ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md))
+- [ ] `bract up` / `bract down` ([ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md))
+- [ ] CLI (`bract ps`, `bract spawn`, `bract send`, `bract log`, `bract read`)
+- [ ] Pipe engine (wire agent outboxes together)
+- [ ] Memory (persistent key-value per agent)
+- [ ] Model routing (Ollama + Anthropic + OpenRouter, [ADR-006](docs/adrs/ADR-006-model-routing.md))
+- [ ] Plugin hooks ([ADR-005](docs/adrs/ADR-005-plugin-model.md))
+
+---
+
+## Design decisions
+
+Architecture decision records live in [`docs/adrs/`](docs/adrs/):
+
+| ADR | Title |
+|-----|-------|
+| [ADR-001](docs/adrs/ADR-001-filesystem-as-process-table.md) | Filesystem as process table |
+| [ADR-002](docs/adrs/ADR-002-inbox-watcher-polling.md) | Inbox watcher via polling |
+| [ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md) | Supervisor and restart policy |
+| [ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md) | bract.yml fleet config format |
+| [ADR-005](docs/adrs/ADR-005-plugin-model.md) | Plugin and extension model |
+| [ADR-006](docs/adrs/ADR-006-model-routing.md) | Model routing and provider abstraction |
+
+---
+
+## License
+
+MIT
