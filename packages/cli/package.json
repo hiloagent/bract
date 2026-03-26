@@ -1,0 +1,27 @@
+{
+  "name": "@losoft/bract-cli",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "bract": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test dist/cli.test.js"
+  },
+  "dependencies": {
+    "@losoft/bract-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0"
+  }
+}
