@@ -17,8 +17,3 @@ jobs:
       - run: bun install
       - run: bun test
       - run: bun run typecheck
-        working-directory: packages/runtime
-      - run: bun run typecheck
-        working-directory: packages/supervisor
-      - run: bun run typecheck
-        working-directory: packages/runner
