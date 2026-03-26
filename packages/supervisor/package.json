@@ -14,7 +14,7 @@
     "build:bun": "bun build ./src/index.ts --outdir ./dist/bun",
     "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
-    "build": "npm run build:bun && npm run build:node && npm run build:types",
+    "build": "bun run build:bun && bun run build:node && bun run build:types",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
