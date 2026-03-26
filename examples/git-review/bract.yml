@@ -1,0 +1,53 @@
+# Git review fleet — review a pull request with two agents
+# Demonstrates: pipes, filters, fan-out, project-local context
+
+version: 1
+
+agents:
+  - name: diff-analyzer
+    model: qwen3.5:9b
+    system: |
+      You receive a git diff. Analyze it for:
+      - Logic errors or bugs
+      - Security issues (injection, auth bypass, secret exposure)
+      - Performance concerns
+      - Missing error handling
+
+      Return a JSON object:
+      {
+        "summary": "One sentence overview of the change",
+        "issues": [{ "severity": "critical|high|medium|low", "line": <n>, "message": "..." }],
+        "score": 0-10,
+        "approved": true/false
+      }
+
+  - name: style-checker
+    model: qwen2.5:3b
+    system: |
+      You receive a git diff. Check for style issues only:
+      - Inconsistent naming conventions
+      - Long functions (> 50 lines)
+      - Missing or poor comments on complex logic
+      - Obvious dead code
+
+      Return JSON: { "issues": [{ "severity": "low", "line": <n>, "message": "..." }] }
+
+  - name: review-summarizer
+    model: anthropic/claude-sonnet-4-6
+    system: |
+      You receive two JSON objects: one from a diff-analyzer and one from a style-checker.
+      Combine them into a single, clear code review in markdown format suitable for
+      a GitHub PR comment. Lead with the verdict (approve / request changes).
+      Be specific about line numbers. Keep it under 400 words.
+    pipes:
+      - from: diff-analyzer
+      - from: style-checker
+
+pipes:
+  - from: diff-analyzer
+    to: review-summarizer
+    transform: '{ source: "logic", review: . }'
+
+  - from: style-checker
+    to: review-summarizer
+    transform: '{ source: "style", review: . }'

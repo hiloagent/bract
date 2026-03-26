@@ -238,7 +238,9 @@ See [`docs/adrs/ADR-005-plugin-model.md`](docs/adrs/ADR-005-plugin-model.md) for
 
 ## Examples
 
-- [`examples/research-fleet/`](examples/research-fleet/) — Four agents running a continuous research pipeline on a single GPU
+- [`examples/research-fleet/`](examples/README.md) — Four agents running a continuous research pipeline on a single GPU
+- [`examples/personal-assistant/`](examples/personal-assistant/) — Single persistent agent with memory across conversations
+- [`examples/git-review/`](examples/git-review/) — Two-agent parallel PR review with fan-in pipe
 
 ---
 
@@ -253,8 +255,8 @@ Early design phase. Core runtime being built.
 - [ ] Supervisor with restart policy ([ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md))
 - [ ] `bract up` / `bract down` ([ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md))
 - [ ] CLI (`bract ps`, `bract spawn`, `bract send`, `bract log`, `bract read`)
-- [ ] Pipe engine (wire agent outboxes together)
-- [ ] Memory (persistent key-value per agent)
+- [ ] Pipe engine (wire agent outboxes together, [ADR-008](docs/adrs/ADR-008-pipe-engine.md))
+- [ ] Memory (persistent key-value per agent, [ADR-007](docs/adrs/ADR-007-memory-system.md))
 - [ ] Model routing (Ollama + Anthropic + OpenRouter, [ADR-006](docs/adrs/ADR-006-model-routing.md))
 - [ ] Plugin hooks ([ADR-005](docs/adrs/ADR-005-plugin-model.md))
 
@@ -272,6 +274,8 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/):
 | [ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md) | bract.yml fleet config format |
 | [ADR-005](docs/adrs/ADR-005-plugin-model.md) | Plugin and extension model |
 | [ADR-006](docs/adrs/ADR-006-model-routing.md) | Model routing and provider abstraction |
+| [ADR-007](docs/adrs/ADR-007-memory-system.md) | Memory system — persistent files per agent |
+| [ADR-008](docs/adrs/ADR-008-pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
 
 ---
 
