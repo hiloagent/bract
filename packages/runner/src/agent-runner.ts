@@ -26,6 +26,12 @@ export interface AgentRunnerOptions {
   system?: string;
   /** Poll interval in ms. Default: 200 */
   pollIntervalMs?: number;
+  /**
+   * Maximum number of history message objects to include in each API call.
+   * Each completed turn adds two entries (user + assistant). When the limit
+   * is exceeded the oldest entries are dropped. Default: 0 (stateless).
+   */
+  maxHistory?: number;
 }
 
 export interface RunEvent {
@@ -41,6 +47,8 @@ export interface RunErrorEvent {
   error: unknown;
 }
 
+type HistoryEntry = { role: string; content: string };
+
 /**
  * AgentRunner wires an agent's inbox to a local (Ollama) language model.
  *
@@ -55,6 +63,7 @@ export interface RunErrorEvent {
  *   home: process.env.BRACT_HOME!,
  *   model: 'qwen2.5:7b',
  *   system: 'You summarise text concisely.',
+ *   maxHistory: 20,
  * });
  *
  * runner.on('run', ({ reply, durationMs }) => {
@@ -68,6 +77,8 @@ export class AgentRunner extends EventEmitter {
   private readonly opts: Required<AgentRunnerOptions>;
   private readonly watcher: InboxWatcher;
   private running = false;
+  /** In-memory conversation history. Cleared on restart. */
+  private readonly history: HistoryEntry[] = [];
 
   constructor(options: AgentRunnerOptions) {
     super();
@@ -75,6 +86,7 @@ export class AgentRunner extends EventEmitter {
       baseUrl: 'http://localhost:11434/v1',
       system: '',
       pollIntervalMs: 200,
+      maxHistory: 0,
       ...options,
     };
 
@@ -117,6 +129,8 @@ export class AgentRunner extends EventEmitter {
       const responseText = await this.callModel(message.body);
       await reply(outboxDir, agentName, responseText, { replyTo: message.id });
 
+      this.appendHistory(message.body, responseText);
+
       const runEvent: RunEvent = {
         agentName,
         messageId: message.id,
@@ -136,12 +150,26 @@ export class AgentRunner extends EventEmitter {
     }
   }
 
+  /** Append a completed turn to history and trim to maxHistory. */
+  private appendHistory(userContent: string, assistantContent: string): void {
+    if (this.opts.maxHistory <= 0) return;
+    this.history.push({ role: 'user', content: userContent });
+    this.history.push({ role: 'assistant', content: assistantContent });
+    while (this.history.length > this.opts.maxHistory) {
+      this.history.shift();
+    }
+  }
+
   private async callModel(prompt: string): Promise<string> {
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: HistoryEntry[] = [];
 
     if (this.opts.system) {
       messages.push({ role: 'system', content: this.opts.system });
     }
+
+    // Include conversation history (empty when maxHistory=0).
+    messages.push(...this.history);
+
     messages.push({ role: 'user', content: prompt });
 
     const response = await fetch(`${this.opts.baseUrl}/chat/completions`, {
