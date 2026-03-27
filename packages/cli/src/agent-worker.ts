@@ -16,36 +16,42 @@
 import { ProcessTable } from '@losoft/bract-runtime';
 import { AgentRunner } from '@losoft/bract-runner';
 
-const home = process.env.BRACT_HOME;
-const name = process.env.BRACT_AGENT_NAME;
-const model = process.env.BRACT_AGENT_MODEL;
-const system = process.env.BRACT_AGENT_SYSTEM;
+/**
+ * Run a detached agent worker.
+ * Called by the CLI when spawned with the __worker sentinel.
+ */
+export async function runWorker(): Promise<void> {
+  const home = process.env.BRACT_HOME;
+  const name = process.env.BRACT_AGENT_NAME;
+  const model = process.env.BRACT_AGENT_MODEL;
+  const system = process.env.BRACT_AGENT_SYSTEM;
 
-if (!home || !name || !model) {
-  process.stderr.write(
-    'agent-worker: BRACT_HOME, BRACT_AGENT_NAME, and BRACT_AGENT_MODEL are required\n',
-  );
-  process.exit(1);
+  if (!home || !name || !model) {
+    process.stderr.write(
+      'agent-worker: BRACT_HOME, BRACT_AGENT_NAME, and BRACT_AGENT_MODEL are required\n',
+    );
+    process.exit(1);
+  }
+
+  const pt = new ProcessTable(home);
+  pt.setRunning(name, process.pid);
+
+  const runner = new AgentRunner({ name, home, model, system });
+
+  process.on('SIGINT', () => {
+    runner.stop();
+    pt.setDead(name);
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', () => {
+    runner.stop();
+    pt.setDead(name);
+    process.exit(0);
+  });
+
+  await runner.start();
+
+  // Keep the process alive
+  await new Promise<void>(() => { /* run until signal */ });
 }
-
-const pt = new ProcessTable(home);
-pt.setRunning(name, process.pid);
-
-const runner = new AgentRunner({ name, home, model, system });
-
-process.on('SIGINT', () => {
-  runner.stop();
-  pt.setDead(name);
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  runner.stop();
-  pt.setDead(name);
-  process.exit(0);
-});
-
-await runner.start();
-
-// Keep the process alive
-await new Promise<void>(() => { /* run until signal */ });
