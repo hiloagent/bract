@@ -1,6 +1,10 @@
 {
   "name": "@losoft/bract-runner",
   "version": "0.0.1",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "exports": {
     ".": {
