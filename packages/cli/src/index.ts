@@ -136,15 +136,12 @@ async function main(): Promise<void> {
   const [command, ...cmdArgs] = rest;
 
   // Also scan cmdArgs for global flags placed after the subcommand.
-  // e.g.  — parseGlobalFlags stops at
-  // the subcommand token, so --json ends up in cmdArgs and would be ignored.
+  // e.g. `bract validate --file foo.yml --json` — parseGlobalFlags stops at
+  // the first non-flag token (the subcommand), so --json ends up in cmdArgs.
   const { found: jsonInArgs, rest: cmdArgsClean } = extractFlag(cmdArgs, '--json');
-  const { found: quietInArgs, rest: cmdArgsFinal } = extractFlag(cmdArgsClean, '--quiet');
+  const { found: quietInArgs, rest: cmdArgsParsed } = extractFlag(cmdArgsClean, '--quiet');
   const json = flags.json || jsonInArgs;
   const quiet = flags.quiet || quietInArgs;
-  // Shadow cmdArgs with cleaned version (global flags stripped out)
-  // eslint-disable-next-line no-param-reassign
-  const cmdArgsParsed = cmdArgsFinal;
 
   switch (command) {
     case 'ps': {
