@@ -135,14 +135,25 @@ async function main(): Promise<void> {
   const { flags, rest } = parseGlobalFlags(argv);
   const [command, ...cmdArgs] = rest;
 
+  // Also scan cmdArgs for global flags placed after the subcommand.
+  // e.g.  — parseGlobalFlags stops at
+  // the subcommand token, so --json ends up in cmdArgs and would be ignored.
+  const { found: jsonInArgs, rest: cmdArgsClean } = extractFlag(cmdArgs, '--json');
+  const { found: quietInArgs, rest: cmdArgsFinal } = extractFlag(cmdArgsClean, '--quiet');
+  const json = flags.json || jsonInArgs;
+  const quiet = flags.quiet || quietInArgs;
+  // Shadow cmdArgs with cleaned version (global flags stripped out)
+  // eslint-disable-next-line no-param-reassign
+  const cmdArgsParsed = cmdArgsFinal;
+
   switch (command) {
     case 'ps': {
-      cmdPs({ home: flags.home, json: flags.json });
+      cmdPs({ home: flags.home, json });
       break;
     }
 
     case 'send': {
-      const [name, ...bodyParts] = cmdArgs;
+      const [name, ...bodyParts] = cmdArgsParsed;
       if (!name) {
         process.stderr.write('bract send: agent name required\n');
         process.exit(2);
@@ -166,29 +177,29 @@ async function main(): Promise<void> {
     }
 
     case 'inbox': {
-      const [name, ...inboxArgs] = cmdArgs;
+      const [name, ...inboxArgs] = cmdArgsParsed;
       if (!name) {
         process.stderr.write('bract inbox: agent name required\n');
         process.exit(2);
       }
       const { found: all } = extractFlag(inboxArgs, '--all');
-      cmdInbox(name, { home: flags.home, all, json: flags.json });
+      cmdInbox(name, { home: flags.home, all, json });
       break;
     }
 
     case 'read': {
-      const [name, ...readArgs] = cmdArgs;
+      const [name, ...readArgs] = cmdArgsParsed;
       if (!name) {
         process.stderr.write('bract read: agent name required\n');
         process.exit(2);
       }
       const { found: all } = extractFlag(readArgs, '--all');
-      cmdRead(name, { home: flags.home, all, json: flags.json });
+      cmdRead(name, { home: flags.home, all, json });
       break;
     }
 
     case 'spawn': {
-      const [spawnName, ...spawnRest] = cmdArgs;
+      const [spawnName, ...spawnRest] = cmdArgsParsed;
       const { found: all } = extractFlag(spawnRest, '--all');
       const { found: detach } = extractFlag(spawnRest, '--detach');
       const { found: follow } = extractFlag(spawnRest, '--follow');
@@ -200,31 +211,31 @@ async function main(): Promise<void> {
         follow,
         file,
         home: flags.home,
-        json: flags.json,
+        json,
       });
       break;
     }
 
     case 'validate': {
-      const { value: file } = extractValueFlag(cmdArgs, '--file');
-      await cmdValidate({ file, json: flags.json });
+      const { value: file } = extractValueFlag(cmdArgsParsed, '--file');
+      await cmdValidate({ file, json });
       break;
     }
 
     case 'up': {
-      const { found: follow } = extractFlag(cmdArgs, '--follow');
-      const { value: file } = extractValueFlag(cmdArgs, '--file');
-      await cmdUp({ follow, file, home: flags.home, json: flags.json });
+      const { found: follow } = extractFlag(cmdArgsParsed, '--follow');
+      const { value: file } = extractValueFlag(cmdArgsParsed, '--file');
+      await cmdUp({ follow, file, home: flags.home, json });
       break;
     }
 
     case 'down': {
-      await cmdDown({ home: flags.home, json: flags.json });
+      await cmdDown({ home: flags.home, json });
       break;
     }
 
     case 'log': {
-      const [name, ...logArgs] = cmdArgs;
+      const [name, ...logArgs] = cmdArgsParsed;
       if (!name) {
         process.stderr.write('bract log: agent name required\n');
         process.exit(2);

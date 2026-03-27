@@ -38,13 +38,20 @@ export async function runWorker(): Promise<void> {
 
   const runner = new AgentRunner({ name, home, model, system });
 
+  // Reffed timer prevents the event loop from exiting in compiled Bun SFEs.
+  // Without this, InboxWatcher's unref()'d timer is the only scheduled work,
+  // and the process exits immediately after runner.start() returns.
+  const keepAlive = setInterval(() => {}, 2_147_483_647);
+
   process.on('SIGINT', () => {
+    clearInterval(keepAlive);
     runner.stop();
     pt.setDead(name);
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
+    clearInterval(keepAlive);
     runner.stop();
     pt.setDead(name);
     process.exit(0);
@@ -52,6 +59,6 @@ export async function runWorker(): Promise<void> {
 
   await runner.start();
 
-  // Keep the process alive
+  // Block until signal; keepAlive timer above holds the event loop open.
   await new Promise<void>(() => { /* run until signal */ });
 }
