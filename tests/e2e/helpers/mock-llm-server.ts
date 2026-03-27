@@ -1,91 +1,85 @@
 /**
- * @file helpers/mock-llm-server.ts
- * A minimal OpenAI-compatible chat completions server using Bun.serve.
- * Used in tier 2/3 e2e tests so agents can process messages without Ollama.
+ * Mock LLM server — responds to OpenAI-compatible /chat/completions requests.
+ * Uses Bun.serve on port 0 (random) so tests don't conflict.
  */
 
 export interface MockResponse {
-  /** Content to return for the next matched request. */
   content: string;
-  /** If set, only respond when the last user message contains this string. */
+  /** If set, only respond when request body contains this string. */
   match?: string;
 }
 
 export interface MockLLMServer {
   baseUrl: string;
-  /** Queue a response — served FIFO unless match is set */
-  enqueue(response: MockResponse): void;
-  /** Replace all queued responses with a fixed reply */
-  setFixed(content: string): void;
-  /** Number of requests received so far */
+  /** Queue a response for the next matching request. */
+  enqueue(resp: MockResponse): void;
+  /** Set a fixed response for all requests (overrides queue). */
+  setFixed(content: string | null): void;
+  /** Total requests received so far. */
   readonly requestCount: number;
   stop(): void;
 }
 
-/**
- * Start a mock OpenAI-compatible LLM server.
- * Returns immediately with the server's base URL.
- */
-export async function startMockLLM(): Promise<MockLLMServer> {
+function makeChoice(content: string) {
+  return {
+    choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop', index: 0 }],
+    model: 'mock',
+    object: 'chat.completion',
+    id: `mock-${Date.now()}`,
+    created: Math.floor(Date.now() / 1000),
+    usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+  };
+}
+
+export function startMockLLM(): MockLLMServer {
   const queue: MockResponse[] = [];
-  let fixed: string | null = 'OK';
-  let requestCount = 0;
+  let fixed: string | null = null;
+  let count = 0;
 
   const server = Bun.serve({
     port: 0, // random available port
-    fetch(req) {
-      if (!req.url.includes('/chat/completions')) {
+    async fetch(req) {
+      const url = new URL(req.url);
+
+      // Health check
+      if (url.pathname === '/health') {
+        return new Response('ok');
+      }
+
+      if (url.pathname !== '/v1/chat/completions') {
         return new Response('not found', { status: 404 });
       }
 
-      return req.json().then((body: any) => {
-        requestCount++;
+      count++;
+      const body = await req.text();
 
-        const lastUserMsg: string =
-          [...(body.messages ?? [])].reverse().find((m: any) => m.role === 'user')?.content ?? '';
-
-        // Pick response: check queue for a match first, then FIFO, then fixed
-        let content: string | null = null;
-        const matchIdx = queue.findIndex((r) => !r.match || lastUserMsg.includes(r.match));
-        if (matchIdx !== -1) {
-          content = queue[matchIdx].content;
-          queue.splice(matchIdx, 1);
-        } else {
-          content = fixed;
+      // Queue takes priority over fixed — allows test to override for specific requests
+      for (let i = 0; i < queue.length; i++) {
+        const entry = queue[i];
+        if (!entry.match || body.includes(entry.match)) {
+          queue.splice(i, 1);
+          return Response.json(makeChoice(entry.content));
         }
+      }
 
-        if (content === null) {
-          return new Response(JSON.stringify({ error: 'no response queued' }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
+      // Fixed response for all remaining requests
+      if (fixed !== null) {
+        return Response.json(makeChoice(fixed));
+      }
 
-        const responseBody = {
-          id: `mock-${requestCount}`,
-          object: 'chat.completion',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content },
-              finish_reason: 'stop',
-            },
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-        };
-
-        return new Response(JSON.stringify(responseBody), {
-          headers: { 'Content-Type': 'application/json' },
-        });
-      });
+      // Default fallback
+      return Response.json(makeChoice('mock response'));
     },
   });
 
+  const port = server.port;
+  const baseUrl = `http://localhost:${port}/v1`;
+
   return {
-    baseUrl: `http://localhost:${server.port}/v1`,
-    enqueue(response) { queue.push(response); },
-    setFixed(content) { fixed = content; },
-    get requestCount() { return requestCount; },
+    baseUrl,
+    enqueue(resp: MockResponse) { queue.push(resp); },
+    setFixed(content: string | null) { fixed = content; },
+    get requestCount() { return count; },
     stop() { server.stop(true); },
   };
 }

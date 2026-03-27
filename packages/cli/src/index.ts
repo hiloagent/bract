@@ -118,9 +118,8 @@ function usage(): void {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
-  // Check for hidden worker sentinel (used by spawnDetached in compiled binary).
-  // When the compiled binary spawns itself as an agent worker, it passes __worker
-  // as the first argument, which triggers this special path.
+  // Hidden sentinels — used when the compiled binary spawns itself as a worker
+  // or supervisor. The sentinel is passed as argv[0] to distinguish these paths.
   if (argv[0] === '__worker') {
     const { runWorker } = await import('./agent-worker.js');
     await runWorker();
@@ -202,11 +201,12 @@ async function main(): Promise<void> {
     }
 
     case 'spawn': {
-      const [spawnName, ...spawnRest] = cmdArgsParsed;
-      const { found: all } = extractFlag(spawnRest, '--all');
-      const { found: detach } = extractFlag(spawnRest, '--detach');
-      const { found: follow } = extractFlag(spawnRest, '--follow');
-      const { value: file } = extractValueFlag(spawnRest, '--file');
+      // Extract all flags first so --all can appear before or after the name
+      const { found: all, rest: spawnR1 } = extractFlag(cmdArgsParsed, '--all');
+      const { found: detach, rest: spawnR2 } = extractFlag(spawnR1, '--detach');
+      const { found: follow, rest: spawnR3 } = extractFlag(spawnR2, '--follow');
+      const { value: file, rest: spawnR4 } = extractValueFlag(spawnR3, '--file');
+      const [spawnName] = spawnR4;
       await cmdSpawn({
         name: !all ? spawnName : undefined,
         all,

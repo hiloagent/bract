@@ -1,105 +1,140 @@
 /**
- * @file tests/e2e/tier4-edge-cases.test.ts
- * Tier 4 — Edge cases: stdin, signals, large messages, concurrency, error paths.
+ * Tier 4 — Edge case tests.
+ * Tests error paths, missing files, invalid inputs, and flag combinations.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'bun:test';
 import { join } from 'node:path';
-import { cli } from './helpers/cli.ts';
-import { makeFixture, registerAgent, type Fixture } from './helpers/fixtures.ts';
-import { killAll } from './helpers/process-cleanup.ts';
-
-let fx: Fixture;
-beforeEach(() => { fx = makeFixture(); registerAgent(fx.home, "assistant"); });
-afterEach(() => { killAll(); fx.cleanup(); });
+import { cli } from './helpers/cli';
+import { makeFixture, registerAgent, type Fixture } from './helpers/fixtures';
+import { killAll, trackPidFile, waitForFile } from './helpers/process-cleanup';
+import { startMockLLM, type MockLLMServer } from './helpers/mock-llm-server';
 
 describe('edge cases', () => {
-  test('TC-E1: send empty stdin body exits non-zero', async () => {
-    const r = await cli(['send', 'assistant', '-'], { env: fx.env, stdin: '' });
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toMatch(/empty|required/i);
+  const fixtures: Fixture[] = [];
+  const llms: MockLLMServer[] = [];
+
+  afterEach(() => {
+    killAll();
+    for (const l of llms) l.stop();
+    for (const fx of fixtures) fx.cleanup();
+    fixtures.length = 0;
+    llms.length = 0;
   });
 
-  test('TC-E2: large message body is stored correctly', async () => {
-    const large = 'x'.repeat(100_000);
-    const r = await cli(['send', 'assistant', '-'], { env: fx.env, stdin: large });
+  function fx(agents: Parameters<typeof makeFixture>[0]): Fixture {
+    const f = makeFixture(agents);
+    fixtures.push(f);
+    return f;
+  }
+
+  // ────────────────────────────────────────────────
+  // TC-E1–E4: BRACT_HOME handling
+  // ────────────────────────────────────────────────
+
+  it('TC-E1: BRACT_HOME env var is respected', async () => {
+    const f = fx([{ name: 'alice' }]);
+    registerAgent(f.home, 'alice');
+    const r = await cli(['ps'], { env: { BRACT_HOME: f.home } });
     expect(r.exitCode).toBe(0);
-    const ir = await cli(['inbox', 'assistant', '--json'], { env: fx.env });
-    const msgs = JSON.parse(ir.stdout);
-    expect(msgs[0].body.length).toBe(100_000);
+    expect(r.stdout).toContain('alice');
   });
 
-  test('TC-E3: concurrent sends do not corrupt inbox', async () => {
-    await Promise.all([
-      cli(['send', 'assistant', 'concurrent-1'], { env: fx.env }),
-      cli(['send', 'assistant', 'concurrent-2'], { env: fx.env }),
-      cli(['send', 'assistant', 'concurrent-3'], { env: fx.env }),
-    ]);
-    const r = await cli(['inbox', 'assistant', '--all', '--json'], { env: fx.env });
-    const msgs = JSON.parse(r.stdout);
-    expect(msgs.length).toBe(3);
-  });
+  it('TC-E2: --home flag takes precedence over BRACT_HOME env', async () => {
+    const f1 = fx([{ name: 'alice' }]);
+    const f2 = fx([{ name: 'bob' }]);
+    registerAgent(f1.home, 'alice');
+    registerAgent(f2.home, 'bob');
 
-  test('TC-E4: validate --file with spaces in path', async () => {
-    const spaceDir = join(fx.home, 'dir with spaces');
-    mkdirSync(spaceDir, { recursive: true });
-    const config = join(spaceDir, 'bract.yml');
-    writeFileSync(config, 'version: 1\nagents:\n  - name: a\n    model: m\n');
-    const r = await cli(['validate', '--file', config]);
+    // f2 home in env, but f1 home via --home flag
+    const r = await cli(['--home', f1.home, 'ps'], { env: { BRACT_HOME: f2.home } });
     expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('alice');
+    expect(r.stdout).not.toContain('bob');
   });
 
-  test('TC-E5: ps with corrupted status file still lists agent', async () => {
-    const agentDir = join(fx.home, 'agents', 'broken');
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(join(agentDir, 'status'), ''); // empty — corrupted
-    writeFileSync(join(agentDir, 'model'), 'gpt-4o\n');
-    const r = await cli(['ps'], { env: fx.env });
+  it('TC-E3: multiple agents registered show in ps', async () => {
+    const f = fx([{ name: 'alice' }, { name: 'bob' }]);
+    registerAgent(f.home, 'alice');
+    registerAgent(f.home, 'bob');
+
+    const r = await cli(['ps'], { env: { BRACT_HOME: f.home } });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain('broken');
+    expect(r.stdout).toContain('alice');
+    expect(r.stdout).toContain('bob');
   });
 
-  test('TC-E6: validate accepts multiple agents', async () => {
-    const cfg = join(fx.home, 'multi.yml');
-    writeFileSync(
-      cfg,
-      'version: 1\nagents:\n  - name: a\n    model: m\n  - name: b\n    model: m\n  - name: c\n    model: m\n',
+  it('TC-E4: spawn requires config file — exits 1 when missing', async () => {
+    const r = await cli(
+      ['spawn', 'alice', '--detach', '--file', '/nonexistent/bract.yml'],
+      { env: { BRACT_HOME: '/tmp/e2e-fake-home' } },
     );
-    const r = await cli(['validate', '--file', cfg, '--json']);
-    const parsed = JSON.parse(r.stdout);
-    expect(parsed.agentCount).toBe(3);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain('cannot read file');
   });
 
-  test('TC-E7: inbox for unknown agent exits non-zero', async () => {
-    const r = await cli(['inbox', 'ghost'], { env: fx.env });
-    // Agent not registered — exits with error code
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toMatch(/not found|ghost/i);
+  // ────────────────────────────────────────────────
+  // TC-E5–E6: send edge cases
+  // ────────────────────────────────────────────────
+
+  it('TC-E5: send empty stdin body exits 2', async () => {
+    const f = fx([{ name: 'alice' }]);
+    registerAgent(f.home, 'alice');
+
+    const r = await cli(['send', 'alice', '-'], {
+      env: { BRACT_HOME: f.home },
+      stdin: '   ',  // whitespace only — trims to empty
+    });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('empty stdin');
   });
 
-  test('TC-E8: read for unknown agent exits non-zero', async () => {
-    const r = await cli(['read', 'ghost'], { env: fx.env });
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toMatch(/not found|ghost/i);
+  it('TC-E6: send without agent name exits 2', async () => {
+    const f = fx([{ name: 'alice' }]);
+    const r = await cli(['send'], { env: { BRACT_HOME: f.home } });
+    expect(r.exitCode).toBe(2);
   });
 
-  test('TC-E9: --json flag works after subcommand for ps', async () => {
-    const r = await cli(['ps', '--json'], { env: fx.env });
-    expect(r.exitCode).toBe(0);
-    expect(() => JSON.parse(r.stdout)).not.toThrow();
+  // ────────────────────────────────────────────────
+  // TC-E7–E8: inbox/read for unregistered agent
+  // ────────────────────────────────────────────────
+
+  it('TC-E7: inbox for unregistered agent exits 3', async () => {
+    const f = fx([{ name: 'alice' }]);
+    const r = await cli(['inbox', 'ghost'], { env: { BRACT_HOME: f.home } });
+    expect(r.exitCode).toBe(3);
+    expect(r.stderr).toContain('ghost');
   });
 
-  test('TC-E10: send with no message body and no stdin flag exits 2', async () => {
-    const r = await cli(['send', 'assistant'], { env: fx.env });
-    // With no body, it tries to read stdin which is 'ignore' — empty stdin triggers error
-    // The exact behavior depends on impl; just check it doesn't silently succeed with empty msg
-    if (r.exitCode === 0) {
-      // If it succeeded, the message body should not be empty
-      const ir = await cli(['inbox', 'assistant', '--json'], { env: fx.env });
-      const msgs = JSON.parse(ir.stdout);
-      if (msgs.length > 0) {
-        expect(msgs[0].body.trim().length).toBeGreaterThan(0);
-      }
-    }
+  it('TC-E8: read for unregistered agent exits 3', async () => {
+    const f = fx([{ name: 'alice' }]);
+    const r = await cli(['read', 'ghost'], { env: { BRACT_HOME: f.home } });
+    expect(r.exitCode).toBe(3);
+    expect(r.stderr).toContain('ghost');
+  });
+
+  // ────────────────────────────────────────────────
+  // TC-E9–E10: validate edge cases
+  // ────────────────────────────────────────────────
+
+  it('TC-E9: validate invalid restart value exits 1', async () => {
+    const f = fx([{ name: 'alice' }]);
+    const { writeFileSync } = await import('node:fs');
+    const bad = join(f.home, 'bad.yml');
+    writeFileSync(bad, 'version: 1\nagents:\n  - name: alice\n    model: test\n    restart: sometimes\n', 'utf8');
+
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: f.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toContain('restart');
+  });
+
+  it('TC-E10: validate unknown top-level key exits 1', async () => {
+    const f = fx([{ name: 'alice' }]);
+    const { writeFileSync } = await import('node:fs');
+    const bad = join(f.home, 'bad.yml');
+    writeFileSync(bad, 'version: 1\nextra_key: oops\nagents:\n  - name: alice\n    model: test\n', 'utf8');
+
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: f.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toContain('extra_key');
   });
 });

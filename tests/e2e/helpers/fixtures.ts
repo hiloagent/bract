@@ -1,97 +1,92 @@
 /**
- * @file helpers/fixtures.ts
- * Creates isolated BRACT_HOME directories and bract.yml configs for each test.
+ * Test fixture helpers — create isolated BRACT_HOME directories with bract.yml.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-export interface Fixture {
-  home: string;
-  configPath: string;
-  /** Env vars to pass to cli() calls */
-  env: Record<string, string>;
-  /** Clean up temp directory */
-  cleanup(): void;
-}
-
-export interface AgentDef {
+export interface AgentFixtureConfig {
   name: string;
   model?: string;
   system?: string;
   restart?: 'always' | 'on-failure' | 'never';
+  pipes?: Array<{ from: string; filter?: string }>;
 }
 
-export interface PipeDef {
-  from: string;
-  to: string;
+export interface Fixture {
+  home: string;
+  configPath: string;
+  cleanup: () => void;
 }
 
 /**
- * Create an isolated fixture with a temp BRACT_HOME and a bract.yml.
- * Call fixture.cleanup() in afterEach/afterAll.
+ * Create a temporary BRACT_HOME directory with a bract.yml.
+ * Returns a Fixture with the home path, config path, and cleanup function.
  */
 export function makeFixture(
-  agents: AgentDef[] = [{ name: 'assistant', model: 'test-model' }],
-  pipes: PipeDef[] = [],
+  agents: AgentFixtureConfig[],
 ): Fixture {
   const home = mkdtempSync(join(tmpdir(), 'bract-e2e-'));
   const configPath = join(home, 'bract.yml');
 
-
-
-  // pipes are per-agent in bract.yml: agent.pipes[].from
-  // Build a map of target -> [from, ...] for injection into agent yaml
-  const pipesByTarget = new Map<string, string[]>();
-  for (const p of pipes) {
-    const list = pipesByTarget.get(p.to) ?? [];
-    list.push(p.from);
-    pipesByTarget.set(p.to, list);
-  }
-
-  const agentYamlWithPipes = agents
-    .map((a) => {
-      let s = `  - name: ${a.name}\n    model: ${a.model ?? 'test-model'}`;
-      if (a.system) s += `\n    system: "${a.system.replace(/"/g, '\\"')}"`;
-      if (a.restart) s += `\n    restart: ${a.restart}`;
-      const froms = pipesByTarget.get(a.name) ?? [];
-      if (froms.length > 0) {
-        s += '\n    pipes:\n' + froms.map(f => `      - from: ${f}`).join('\n');
+  const agentYaml = agents.map((a) => {
+    const lines: string[] = [
+      `  - name: ${a.name}`,
+      `    model: ${a.model ?? 'test-model'}`,
+    ];
+    if (a.system) lines.push(`    system: "${a.system}"`);
+    if (a.restart) lines.push(`    restart: ${a.restart}`);
+    if (a.pipes && a.pipes.length > 0) {
+      lines.push('    pipes:');
+      for (const p of a.pipes) {
+        lines.push(`      - from: ${p.from}`);
+        if (p.filter) lines.push(`        filter: "${p.filter}"`);
       }
-      return s;
-    })
-    .join('\n');
+    }
+    return lines.join('\n');
+  }).join('\n');
 
-  writeFileSync(
-    configPath,
-    `version: 1\nagents:\n${agentYamlWithPipes}\n`,
-    'utf8',
-  );
+  const yaml = `version: 1\nagents:\n${agentYaml}\n`;
+  writeFileSync(configPath, yaml, 'utf8');
 
   return {
     home,
     configPath,
-    env: { BRACT_HOME: home },
-    cleanup() {
+    cleanup: () => {
       try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     },
   };
 }
 
-/** Write a file inside the fixture home */
-export function writeFixtureFile(home: string, rel: string, content: string): void {
-  const full = join(home, rel);
-  mkdirSync(join(full, '..'), { recursive: true });
-  writeFileSync(full, content, 'utf8');
-}
-
 /**
- * Pre-register an agent in the process table so send/read/inbox commands work.
- * Sets status=idle and writes the model file — no process is spawned.
+ * Pre-register an agent in the process table so send/inbox/read commands work
+ * without needing to spawn it first.
  */
 export function registerAgent(home: string, name: string, model = 'test-model'): void {
   const agentDir = join(home, 'agents', name);
-  mkdirSync(agentDir, { recursive: true });
-  writeFileSync(join(agentDir, 'status'), 'idle\n', 'utf8');
+  mkdirSync(join(agentDir, 'inbox'), { recursive: true });
+  mkdirSync(join(agentDir, 'outbox'), { recursive: true });
+  mkdirSync(join(agentDir, 'memory'), { recursive: true });
+  mkdirSync(join(agentDir, 'logs'), { recursive: true });
   writeFileSync(join(agentDir, 'model'), model + '\n', 'utf8');
+  writeFileSync(join(agentDir, 'status'), 'idle\n', 'utf8');
+  writeFileSync(join(agentDir, 'pid'), '\n', 'utf8');
+}
+
+/**
+ * Write a message directly into an agent's inbox (bypasses `bract send`).
+ */
+export function writeInboxMessage(
+  home: string,
+  agentName: string,
+  body: string,
+  from = 'test',
+): string {
+  const ts = Date.now();
+  const id = `${ts}-${Math.random().toString(36).slice(2, 8)}`;
+  const inboxDir = join(home, 'agents', agentName, 'inbox');
+  mkdirSync(inboxDir, { recursive: true });
+  const msgPath = join(inboxDir, `${id}.msg`);
+  writeFileSync(msgPath, JSON.stringify({ id, from, body, ts: new Date(ts).toISOString() }) + '\n', 'utf8');
+  return id;
 }
