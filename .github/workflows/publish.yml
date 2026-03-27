@@ -26,7 +26,7 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" >> ~/.npmrc
           cd packages/runtime    && bun publish --access public
           cd ../supervisor       && bun publish --access public
           cd ../runner           && bun publish --access public
