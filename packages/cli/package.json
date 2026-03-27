@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@losoft/bract-runtime": "workspace:*",
-    "@losoft/bract-runner": "workspace:*"
+    "@losoft/bract-runner": "workspace:*",
+    "@losoft/bract-supervisor": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "^1",
