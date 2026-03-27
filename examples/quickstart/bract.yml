@@ -1,0 +1,9 @@
+version: 1
+
+agents:
+  - name: assistant
+    model: qwen2.5:3b
+    system: |
+      You are a concise, helpful assistant.
+      Keep your answers short — 2-3 sentences maximum.
+    restart: on-failure
