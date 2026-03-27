@@ -12,6 +12,7 @@ export interface SendOptions {
   from?: string;
 }
 
+/** Write a message to an agent inbox and confirm the message ID on stdout. */
 export async function cmdSend(agentName: string, body: string, opts: SendOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);

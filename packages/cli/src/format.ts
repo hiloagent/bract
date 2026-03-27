@@ -1,6 +1,4 @@
-/**
- * Minimal table formatter — no dependencies, just right-padded columns.
- */
+/** Render rows as a plain-text table with right-padded columns and a header separator. */
 export function table(rows: string[][], headers: string[]): string {
   const allRows = [headers, ...rows];
   const widths = headers.map((_, ci) =>

@@ -69,6 +69,7 @@ export async function reply(
   return send(outboxDir, from, body, metadata);
 }
 
+/** List pending (unprocessed) message files in a directory, sorted chronologically. */
 export function listPending(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -96,6 +97,7 @@ export async function read(dir: string, filename: string): Promise<Message> {
   return { ...parsed, v: MESSAGE_VERSION } as Message;
 }
 
+/** Read, parse, and move a message to .processed/, returning its parsed content. */
 export async function consume(dir: string, filename: string): Promise<Message> {
   const msg = await read(dir, filename);
   const processedDir = join(dir, '.processed');
