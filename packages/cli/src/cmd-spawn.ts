@@ -135,8 +135,6 @@ async function spawnDetached(
   const pt = new ProcessTable(home);
   pt.register(agent.name, agent.model);
 
-  const workerPath = join(import.meta.dir, 'agent-worker.ts');
-
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     BRACT_HOME: home,
@@ -150,7 +148,7 @@ async function spawnDetached(
   const logFd = await logFile.writer();
 
   const proc = Bun.spawn(
-    [process.execPath, workerPath],
+    [process.execPath, '__worker'],
     {
       env,
       detached: true,

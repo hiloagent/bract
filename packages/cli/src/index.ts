@@ -118,6 +118,15 @@ function usage(): void {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
+  // Check for hidden worker sentinel (used by spawnDetached in compiled binary).
+  // When the compiled binary spawns itself as an agent worker, it passes __worker
+  // as the first argument, which triggers this special path.
+  if (argv[0] === '__worker') {
+    const { runWorker } = await import('./agent-worker.js');
+    await runWorker();
+    return;
+  }
+
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     usage();
     return;
