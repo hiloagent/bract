@@ -2,7 +2,7 @@
 /**
  * @file index.ts
  * bract CLI entry point. Parses argv and dispatches to subcommands.
- * Commands: ps | send | inbox | read | validate
+ * Commands: ps | send | inbox | read | spawn | validate
  * Flags: --home <path> | --json | --quiet
  * @module @losoft/bract-cli
  */
@@ -22,6 +22,7 @@
  *   send <name> <message>   Write a message to an agent's inbox
  *   inbox <name>            Show pending inbox messages
  *   read <name>             Show latest outbox message(s)
+ *   spawn <name>            Spawn agent from bract.yml
  *   validate [--file <path>]  Validate bract.yml against schema
  */
 
@@ -29,6 +30,7 @@ import { cmdPs } from './cmd-ps.js';
 import { cmdSend } from './cmd-send.js';
 import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
+import { cmdSpawn } from './cmd-spawn.js';
 import { cmdValidate } from './cmd-validate.js';
 
 interface GlobalFlags {
@@ -87,6 +89,8 @@ function usage(): void {
       '  send <name> -               Read message body from stdin',
       '  inbox <name> [--all]        Show inbox messages',
       '  read <name> [--all]         Show outbox messages',
+      '  spawn <name>                Spawn agent from bract.yml',
+      '  spawn --all                 Spawn all agents',
       '  validate [--file <path>]    Validate bract.yml against schema',
       '',
       'Flags:',
@@ -158,6 +162,24 @@ async function main(): Promise<void> {
       }
       const { found: all } = extractFlag(readArgs, '--all');
       cmdRead(name, { home: flags.home, all, json: flags.json });
+      break;
+    }
+
+    case 'spawn': {
+      const [spawnName, ...spawnRest] = cmdArgs;
+      const { found: all } = extractFlag(spawnRest, '--all');
+      const { found: detach } = extractFlag(spawnRest, '--detach');
+      const { found: follow } = extractFlag(spawnRest, '--follow');
+      const { value: file } = extractValueFlag(spawnRest, '--file');
+      await cmdSpawn({
+        name: !all ? spawnName : undefined,
+        all,
+        detach,
+        follow,
+        file,
+        home: flags.home,
+        json: flags.json,
+      });
       break;
     }
 
