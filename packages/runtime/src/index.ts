@@ -15,3 +15,6 @@ export type { Message } from './message.js';
 
 export { InboxWatcher } from './inbox-watcher.js';
 export type { InboxWatcherOptions, MessageEvent, InboxErrorEvent } from './inbox-watcher.js';
+
+export { PipeRouter } from './pipe-router.js';
+export type { PipeDef, PipeRouterOptions } from './pipe-router.js';
