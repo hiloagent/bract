@@ -1,0 +1,22 @@
+{
+  "name": "@losoft/bract-cli-linux-arm64",
+  "version": "0.0.1",
+  "description": "bract CLI binary for linux-arm64",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "bin": {
+    "bract": "./bract"
+  },
+  "files": [
+    "bract"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hiloagent/bract"
+  }
+}

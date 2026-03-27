@@ -1,0 +1,22 @@
+{
+  "name": "@losoft/bract-cli-darwin-x64",
+  "version": "0.0.1",
+  "description": "bract CLI binary for darwin-x64",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "bin": {
+    "bract": "./bract"
+  },
+  "files": [
+    "bract"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hiloagent/bract"
+  }
+}
