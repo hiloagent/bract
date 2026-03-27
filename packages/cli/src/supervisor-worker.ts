@@ -14,7 +14,8 @@
 import { join } from 'node:path';
 import { unlinkSync, existsSync } from 'node:fs';
 import { Supervisor } from '@losoft/bract-supervisor';
-import { ProcessTable } from '@losoft/bract-runtime';
+import { ProcessTable, PipeRouter } from '@losoft/bract-runtime';
+import type { PipeDef } from '@losoft/bract-runtime';
 import { parseBractConfig } from './cmd-spawn.js';
 
 const home = process.env.BRACT_HOME;
@@ -79,8 +80,25 @@ supervisor.on('agent:exhausted', ({ name, restartCount }) => {
   process.stderr.write(`[supervisor] ${name} exhausted restart limit (${restartCount} restarts)\n`);
 });
 
+// Build pipe definitions from config
+const pipeDefs: PipeDef[] = [];
+for (const agent of config.agents) {
+  for (const pipe of agent.pipes ?? []) {
+    pipeDefs.push({ from: pipe.from, to: agent.name, filter: pipe.filter });
+  }
+}
+
+// Start PipeRouter if any pipes are defined
+let pipeRouter: PipeRouter | null = null;
+if (pipeDefs.length > 0) {
+  pipeRouter = new PipeRouter(pt.root, pipeDefs);
+  pipeRouter.start();
+  process.stderr.write(`[supervisor] pipe router started (${pipeDefs.length} pipe(s))\n`);
+}
+
 async function shutdown() {
   supervisor.stop();
+  pipeRouter?.stop();
   const pidFile = join(home!, 'supervisor.pid');
   if (existsSync(pidFile)) try { unlinkSync(pidFile); } catch { /* ignore */ }
   process.exit(0);
