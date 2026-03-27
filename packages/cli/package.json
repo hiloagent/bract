@@ -23,7 +23,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@losoft/bract-runtime": "workspace:*"
+    "@losoft/bract-runtime": "workspace:*",
+    "@losoft/bract-runner": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "^1",

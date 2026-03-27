@@ -2,7 +2,7 @@
 /**
  * @file index.ts
  * bract CLI entry point. Parses argv and dispatches to subcommands.
- * Commands: ps | send | inbox | read
+ * Commands: ps | send | inbox | read | spawn
  * Flags: --home <path> | --json | --quiet
  * @module @losoft/bract-cli
  */
@@ -28,6 +28,7 @@ import { cmdPs } from './cmd-ps.js';
 import { cmdSend } from './cmd-send.js';
 import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
+import { cmdSpawn } from './cmd-spawn.js';
 
 interface GlobalFlags {
   home?: string;
@@ -85,6 +86,8 @@ function usage(): void {
       '  send <name> -               Read message body from stdin',
       '  inbox <name> [--all]        Show inbox messages',
       '  read <name> [--all]         Show outbox messages',
+      '  spawn <name>                Spawn agent from bract.yml',
+      '  spawn --all                 Spawn all agents',
       '',
       'Flags:',
       '  --home <path>   Override BRACT_HOME (default: ~/.bract)',
@@ -155,6 +158,24 @@ async function main(): Promise<void> {
       }
       const { found: all } = extractFlag(readArgs, '--all');
       cmdRead(name, { home: flags.home, all, json: flags.json });
+      break;
+    }
+
+    case 'spawn': {
+      const [spawnName, ...spawnRest] = cmdArgs;
+      const { found: all } = extractFlag(spawnRest, '--all');
+      const { found: detach } = extractFlag(spawnRest, '--detach');
+      const { found: follow } = extractFlag(spawnRest, '--follow');
+      const { value: file } = extractValueFlag(spawnRest, '--file');
+      await cmdSpawn({
+        name: !all ? spawnName : undefined,
+        all,
+        detach,
+        follow,
+        file,
+        home: flags.home,
+        json: flags.json,
+      });
       break;
     }
 
