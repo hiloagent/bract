@@ -2,7 +2,7 @@
 /**
  * @file index.ts
  * bract CLI entry point. Parses argv and dispatches to subcommands.
- * Commands: ps | send | inbox | read | spawn
+ * Commands: ps | send | inbox | read | spawn | validate
  * Flags: --home <path> | --json | --quiet
  * @module @losoft/bract-cli
  */
@@ -22,6 +22,8 @@
  *   send <name> <message>   Write a message to an agent's inbox
  *   inbox <name>            Show pending inbox messages
  *   read <name>             Show latest outbox message(s)
+ *   spawn <name>            Spawn agent from bract.yml
+ *   validate [--file <path>]  Validate bract.yml against schema
  */
 
 import { cmdPs } from './cmd-ps.js';
@@ -29,6 +31,7 @@ import { cmdSend } from './cmd-send.js';
 import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
 import { cmdSpawn } from './cmd-spawn.js';
+import { cmdValidate } from './cmd-validate.js';
 
 interface GlobalFlags {
   home?: string;
@@ -88,6 +91,7 @@ function usage(): void {
       '  read <name> [--all]         Show outbox messages',
       '  spawn <name>                Spawn agent from bract.yml',
       '  spawn --all                 Spawn all agents',
+      '  validate [--file <path>]    Validate bract.yml against schema',
       '',
       'Flags:',
       '  --home <path>   Override BRACT_HOME (default: ~/.bract)',
@@ -176,6 +180,13 @@ async function main(): Promise<void> {
         home: flags.home,
         json: flags.json,
       });
+      break;
+    }
+
+    case 'validate': {
+      const { value: file, rest: validateRest } = extractValueFlag(cmdArgs, '--file');
+      void validateRest;
+      await cmdValidate({ file, json: flags.json });
       break;
     }
 
