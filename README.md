@@ -39,12 +39,15 @@ $BRACT_HOME/
 ### Prerequisites
 
 - [Bun](https://bun.sh) 1.1+
-- [Ollama](https://ollama.com) running locally (or an Anthropic/OpenRouter API key)
+- [Ollama](https://ollama.com) running locally (or any OpenAI-compatible endpoint)
 
-### Install
+### Build from source
 
 ```sh
-bun install -g bract
+git clone https://github.com/hiloagent/bract
+cd bract
+bun install
+bun run build
 ```
 
 ### Start a single agent
@@ -61,79 +64,42 @@ bract send my-agent "What is the capital of France?"
 
 # Read the response
 bract read my-agent
-
-# Watch its log
-bract log my-agent --follow
 ```
 
-### Run a fleet
-
-Create a `bract.yml` in any directory:
-
-```yaml
-version: 1
-
-agents:
-  - name: researcher
-    model: qwen3.5:9b
-    system: |
-      You are a research assistant. When given a topic, search for recent
-      developments and write a concise summary with your analysis.
-    restart: always
-
-  - name: notify
-    model: qwen2.5:3b
-    system: |
-      You receive research summaries. Send a Telegram message with
-      the key points in 3 bullet points.
-    env:
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
-      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
-    pipes:
-      - from: researcher
-```
-
-Then:
+### Validate a config
 
 ```sh
-bract up
-bract ps
-bract send researcher "Latest developments in fusion energy"
-bract read notify --follow
+# Check your bract.yml is valid before using it
+bract validate
+
+# Point at a specific file
+bract validate --file ./config/agents.yml
+
+# Machine-readable output
+bract validate --json
 ```
 
 ---
 
 ## CLI
 
-```sh
-# Fleet
-bract up                          # start all agents from bract.yml
-bract down                        # stop all agents
-bract ps                          # list agents + status
+The following commands are implemented and working:
 
-# Lifecycle
-bract spawn <name> --model <m>    # start a single agent
-bract kill <name>                 # stop an agent
-bract restart <name>              # restart an agent
+```sh
+# Agents
+bract spawn <name> --model <m>    # start an agent
+bract ps                          # list agents and their status
 
 # Messaging
-bract send <name> "<message>"     # send a message
-bract read <name>                 # read latest outbox message
+bract send <name> "<message>"     # send a message to an agent's inbox
+bract read <name>                 # read latest outbox message(s)
 bract inbox <name>                # show pending inbox messages
-bract pipe <from> <to>            # wire two agents together
 
-# Observation
-bract log <name> --follow         # stream agent logs
-bract memory <name>               # read/write agent memory
-
-# Maintenance
-bract validate                    # lint bract.yml
-bract gc                          # clean up old logs and processed messages
-bract status                      # supervisor health
+# Config
+bract validate [--file <path>]    # validate bract.yml against schema and pipe rules
 ```
 
-See [`docs/cli-spec.md`](docs/cli-spec.md) for the full command reference.
+**Coming in v0.2:** `bract up` / `bract down`, `bract log`, `bract pipe`, supervisor with restart policy.
 
 ---
 
@@ -147,17 +113,36 @@ See [`docs/cli-spec.md`](docs/cli-spec.md) for the full command reference.
 
 ---
 
+## Memory
+
+Each agent has a persistent `memory/` directory. The `@losoft/bract-memory` package exposes seven tools:
+
+| Tool | Description |
+|------|-------------|
+| `memory_read(key, start?, end?)` | Read a file, optionally by line range |
+| `memory_write(key, content)` | Create or overwrite a file |
+| `memory_append(key, content)` | Append to a file (creates if absent) |
+| `memory_replace(key, old, new)` | Find-and-replace inside a file |
+| `memory_grep(pattern)` | Regex search across all memory files |
+| `memory_glob(pattern)` | Filename pattern matching (`*` lists all) |
+| `memory_delete(key)` | Remove a file |
+
+Memory files are injected into the agent's system prompt automatically.
+
+---
+
 ## Pluggable models
 
+bract uses the OpenAI-compatible chat completions API. Any endpoint that speaks it works:
+
 ```sh
-# Local via Ollama (default)
-bract spawn my-agent --model qwen3.5:9b
+# Local via Ollama (default base URL: http://localhost:11434/v1)
+bract spawn my-agent --model qwen2.5:3b
 
-# Remote via Anthropic
-ANTHROPIC_API_KEY=sk-... bract spawn my-agent --model anthropic/claude-sonnet-4-6
-
-# Remote via OpenRouter
-OPENROUTER_API_KEY=sk-... bract spawn my-agent --model openrouter/qwen/qwen-2.5-72b-instruct
+# Remote — set base URL via env
+BRACT_BASE_URL=https://api.openai.com/v1 \
+OPENAI_API_KEY=sk-... \
+bract spawn my-agent --model gpt-4o
 ```
 
 See [`docs/adrs/ADR-006-model-routing.md`](docs/adrs/ADR-006-model-routing.md) for the full model routing spec.
@@ -202,61 +187,20 @@ they just won't be restarted until the supervisor comes back.
 
 ---
 
-## Extension
-
-Plugins are sidecar processes or in-process hooks. The filesystem is the interface —
-a plugin just reads and writes the same files an agent would.
-
-```typescript
-// bract.config.ts — register custom tools, hooks, or providers
-import type { BractConfig } from 'bract'
-
-export default {
-  tools: [
-    {
-      name: 'web_search',
-      description: 'Search the web',
-      parameters: {
-        type: 'object',
-        properties: { query: { type: 'string' } },
-        required: ['query']
-      },
-      handler: async ({ query }) => { /* ... */ }
-    }
-  ],
-  hooks: {
-    afterMessage: async ({ agent, response }) => {
-      // called after every agent response
-    }
-  }
-} satisfies BractConfig
-```
-
-See [`docs/adrs/ADR-005-plugin-model.md`](docs/adrs/ADR-005-plugin-model.md) for details.
-
----
-
-## Examples
-
-- [`examples/research-fleet/`](examples/README.md) — Four agents running a continuous research pipeline on a single GPU
-- [`examples/personal-assistant/`](examples/personal-assistant/) — Single persistent agent with memory across conversations
-- [`examples/git-review/`](examples/git-review/) — Two-agent parallel PR review with fan-in pipe
-
----
-
 ## Status
 
-Early design phase. Core runtime being built.
+Early alpha. Core messaging and agent lifecycle are working. Fleet management (supervisor, `bract up`, pipe engine) is next.
 
 - [x] Filesystem layout ([ADR-001](docs/adrs/ADR-001-filesystem-as-process-table.md))
 - [x] Message module (inbox/outbox read/write, consume-to-processed)
 - [x] Inbox watcher (filesystem polling → agent trigger, [ADR-002](docs/adrs/ADR-002-inbox-watcher-polling.md))
-- [ ] Agent spawner
+- [x] AgentRunner (connects inbox → LLM → outbox, OpenAI-compatible API)
+- [x] CLI (`bract ps`, `bract spawn`, `bract send`, `bract read`, `bract inbox`, `bract validate`)
+- [x] Memory tools (`memory_read`, `memory_write`, `memory_append`, `memory_replace`, `memory_grep`, `memory_glob`, `memory_delete`)
+- [x] Memory injection (agent memory files in system prompt)
 - [ ] Supervisor with restart policy ([ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md))
 - [ ] `bract up` / `bract down` ([ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md))
-- [ ] CLI (`bract ps`, `bract spawn`, `bract send`, `bract log`, `bract read`)
 - [ ] Pipe engine (wire agent outboxes together, [ADR-008](docs/adrs/ADR-008-pipe-engine.md))
-- [ ] Memory (persistent key-value per agent, [ADR-007](docs/adrs/ADR-007-memory-system.md))
 - [ ] Model routing (Ollama + Anthropic + OpenRouter, [ADR-006](docs/adrs/ADR-006-model-routing.md))
 - [ ] Plugin hooks ([ADR-005](docs/adrs/ADR-005-plugin-model.md))
 
@@ -276,6 +220,7 @@ Architecture decision records live in [`docs/adrs/`](docs/adrs/):
 | [ADR-006](docs/adrs/ADR-006-model-routing.md) | Model routing and provider abstraction |
 | [ADR-007](docs/adrs/ADR-007-memory-system.md) | Memory system — persistent files per agent |
 | [ADR-008](docs/adrs/ADR-008-pipe-engine.md) | Pipe engine — outbox-to-inbox forwarding |
+| [ADR-009](docs/adrs/ADR-009-dual-target-build.md) | Dual-target build (Bun + Node.js) |
 
 ---
 
