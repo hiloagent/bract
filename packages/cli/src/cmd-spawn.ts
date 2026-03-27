@@ -182,16 +182,20 @@ async function spawnForeground(
     system: agent.system,
   });
 
-  process.on('SIGINT', () => {
+  // Reffed keepalive holds the event loop open in compiled Bun SFEs where
+  // InboxWatcher's unref'd timer would otherwise let the process exit.
+  const keepAlive = setInterval(() => {}, 2_147_483_647);
+
+  // Cleanup function for graceful shutdown on signals.
+  const cleanupAndExit = () => {
+    clearInterval(keepAlive);
     runner.stop();
     pt.setDead(agent.name);
     process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    runner.stop();
-    pt.setDead(agent.name);
-    process.exit(0);
-  });
+  };
+
+  process.once('SIGINT', cleanupAndExit);
+  process.once('SIGTERM', cleanupAndExit);
 
   if (!follow) {
     process.stdout.write(`spawned ${agent.name} (pid ${process.pid})\n`);
@@ -199,7 +203,7 @@ async function spawnForeground(
 
   await runner.start();
 
-  // Block forever — runner processes inbox messages as they arrive.
+  // Block until signal; keepAlive timer above holds the event loop open.
   await new Promise<void>(() => { /* run until signal */ });
 }
 
