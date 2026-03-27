@@ -14,6 +14,7 @@ export interface ReadOptions {
   json?: boolean;
 }
 
+/** Display the latest outbox message(s) written by an agent. */
 export async function cmdRead(agentName: string, opts: ReadOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);

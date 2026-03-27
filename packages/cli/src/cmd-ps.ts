@@ -24,6 +24,7 @@ function crashCount(agentDir: string): string {
   }
 }
 
+/** Print a table of all registered agents with their current status. */
 export function cmdPs(opts: PsOptions = {}): void {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);

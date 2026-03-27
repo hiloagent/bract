@@ -15,6 +15,7 @@ export interface InboxOptions {
   json?: boolean;
 }
 
+/** List pending (and optionally processed) inbox messages for an agent. */
 export async function cmdInbox(agentName: string, opts: InboxOptions = {}): Promise<void> {
   const home = resolveBractHome(opts.home);
   const pt = new ProcessTable(home);
