@@ -11,6 +11,7 @@ export interface BractAgentConfig {
   name: string;
   model: string;
   system?: string;
+  restart?: "always" | "on-failure" | "never";
 }
 
 export interface BractConfig {

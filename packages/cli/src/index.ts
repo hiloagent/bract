@@ -2,7 +2,7 @@
 /**
  * @file index.ts
  * bract CLI entry point. Parses argv and dispatches to subcommands.
- * Commands: ps | send | inbox | read | spawn | validate
+ * Commands: ps | send | inbox | read | spawn | validate | up | down | log
  * Flags: --home <path> | --json | --quiet
  * @module @losoft/bract-cli
  */
@@ -18,12 +18,15 @@
  *   --quiet         Suppress non-essential output
  *
  * Commands implemented here:
- *   ps                      List all agents
- *   send <name> <message>   Write a message to an agent's inbox
- *   inbox <name>            Show pending inbox messages
- *   read <name>             Show latest outbox message(s)
- *   spawn <name>            Spawn agent from bract.yml
+ *   ps                        List all agents
+ *   send <name> <message>     Write a message to an agent's inbox
+ *   inbox <name>              Show pending inbox messages
+ *   read <name>               Show latest outbox message(s)
+ *   spawn <name>              Spawn agent from bract.yml
  *   validate [--file <path>]  Validate bract.yml against schema
+ *   up [--follow]             Start the supervisor and all agents
+ *   down                      Stop the supervisor and all agents
+ *   log <name> [-f] [--all]   Show or stream agent logs
  */
 
 import { cmdPs } from './cmd-ps.js';
@@ -32,6 +35,9 @@ import { cmdInbox } from './cmd-inbox.js';
 import { cmdRead } from './cmd-read.js';
 import { cmdSpawn } from './cmd-spawn.js';
 import { cmdValidate } from './cmd-validate.js';
+import { cmdUp } from './cmd-up.js';
+import { cmdDown } from './cmd-down.js';
+import { cmdLog } from './cmd-log.js';
 
 interface GlobalFlags {
   home?: string;
@@ -52,7 +58,6 @@ function parseGlobalFlags(argv: string[]): { flags: GlobalFlags; rest: string[] 
     } else if (arg === '--quiet') {
       flags.quiet = true;
     } else {
-      // First non-flag argument starts the sub-command
       rest.push(...argv.slice(i));
       break;
     }
@@ -83,14 +88,23 @@ function usage(): void {
     [
       'Usage: bract [--home <path>] [--json] <command> [args]',
       '',
-      'Commands:',
+      'Fleet:',
+      '  up [--follow]               Start supervisor and all agents from bract.yml',
+      '  down                        Stop supervisor and all agents',
       '  ps                          List all agents',
+      '',
+      'Agent:',
+      '  spawn <name>                Spawn a single agent from bract.yml',
+      '  spawn --all                 Spawn all agents (use up for supervisor)',
+      '  log <name> [-f] [--all]     Show or stream agent logs',
+      '',
+      'Messaging:',
       '  send <name> <message>       Send a message to an agent',
       '  send <name> -               Read message body from stdin',
       '  inbox <name> [--all]        Show inbox messages',
       '  read <name> [--all]         Show outbox messages',
-      '  spawn <name>                Spawn agent from bract.yml',
-      '  spawn --all                 Spawn all agents',
+      '',
+      'Config:',
       '  validate [--file <path>]    Validate bract.yml against schema',
       '',
       'Flags:',
@@ -129,7 +143,6 @@ async function main(): Promise<void> {
 
       let body: string;
       if (rawBody === '-' || rawBody === '') {
-        // Read from stdin
         body = await readStdin();
         if (!body) {
           process.stderr.write('bract send: message body required (got empty stdin)\n');
@@ -184,9 +197,33 @@ async function main(): Promise<void> {
     }
 
     case 'validate': {
-      const { value: file, rest: validateRest } = extractValueFlag(cmdArgs, '--file');
-      void validateRest;
+      const { value: file } = extractValueFlag(cmdArgs, '--file');
       await cmdValidate({ file, json: flags.json });
+      break;
+    }
+
+    case 'up': {
+      const { found: follow } = extractFlag(cmdArgs, '--follow');
+      const { value: file } = extractValueFlag(cmdArgs, '--file');
+      await cmdUp({ follow, file, home: flags.home, json: flags.json });
+      break;
+    }
+
+    case 'down': {
+      await cmdDown({ home: flags.home, json: flags.json });
+      break;
+    }
+
+    case 'log': {
+      const [name, ...logArgs] = cmdArgs;
+      if (!name) {
+        process.stderr.write('bract log: agent name required\n');
+        process.exit(2);
+      }
+      const { found: follow } = extractFlag(logArgs, '-f');
+      const { found: followLong } = extractFlag(logArgs, '--follow');
+      const { found: all } = extractFlag(logArgs, '--all');
+      await cmdLog({ name, follow: follow || followLong, all, home: flags.home });
       break;
     }
 
