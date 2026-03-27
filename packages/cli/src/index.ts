@@ -164,7 +164,7 @@ async function main(): Promise<void> {
     case 'validate': {
       const { value: file, rest: validateRest } = extractValueFlag(cmdArgs, '--file');
       void validateRest;
-      cmdValidate({ file, json: flags.json });
+      await cmdValidate({ file, json: flags.json });
       break;
     }
 

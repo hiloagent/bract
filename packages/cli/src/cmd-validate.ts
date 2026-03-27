@@ -3,7 +3,6 @@
  * Implementation of `bract validate` — validates bract.yml against JSON schema and pipe rules.
  * @module @losoft/bract-cli/cmd-validate
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface ValidateOptions {
@@ -330,12 +329,12 @@ function countPipes(config: Record<string, unknown>): number {
 // ---- Entry point ----
 
 /** Validates a bract.yml file against the schema and pipe rules. */
-export function cmdValidate(opts: ValidateOptions = {}): void {
+export async function cmdValidate(opts: ValidateOptions = {}): Promise<void> {
   const filePath = resolve(opts.file ?? 'bract.yml');
 
   let raw: string;
   try {
-    raw = readFileSync(filePath, 'utf8');
+    raw = await Bun.file(filePath).text();
   } catch {
     const result: ValidationResult = {
       valid: false,
