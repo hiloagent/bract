@@ -186,18 +186,16 @@ async function spawnForeground(
   // InboxWatcher's unref'd timer would otherwise let the process exit.
   const keepAlive = setInterval(() => {}, 2_147_483_647);
 
-  process.on('SIGINT', () => {
+  // Cleanup function for graceful shutdown on signals.
+  const cleanupAndExit = () => {
     clearInterval(keepAlive);
     runner.stop();
     pt.setDead(agent.name);
     process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    clearInterval(keepAlive);
-    runner.stop();
-    pt.setDead(agent.name);
-    process.exit(0);
-  });
+  };
+
+  process.once('SIGINT', cleanupAndExit);
+  process.once('SIGTERM', cleanupAndExit);
 
   if (!follow) {
     process.stdout.write(`spawned ${agent.name} (pid ${process.pid})\n`);

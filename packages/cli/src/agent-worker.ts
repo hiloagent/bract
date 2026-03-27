@@ -43,19 +43,16 @@ export async function runWorker(): Promise<void> {
   // and the process exits immediately after runner.start() returns.
   const keepAlive = setInterval(() => {}, 2_147_483_647);
 
-  process.on('SIGINT', () => {
+  // Cleanup function for graceful shutdown on signals.
+  const cleanupAndExit = () => {
     clearInterval(keepAlive);
     runner.stop();
     pt.setDead(name);
     process.exit(0);
-  });
+  };
 
-  process.on('SIGTERM', () => {
-    clearInterval(keepAlive);
-    runner.stop();
-    pt.setDead(name);
-    process.exit(0);
-  });
+  process.once('SIGINT', cleanupAndExit);
+  process.once('SIGTERM', cleanupAndExit);
 
   await runner.start();
 
