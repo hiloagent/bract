@@ -19,6 +19,7 @@ import { resolveProvider } from './provider.js';
 import type { ProviderRegistry, ChatMessage } from './provider.js';
 import { OpenAICompatProvider } from './providers/openai-compat.js';
 import { AnthropicProvider } from './providers/anthropic.js';
+import { ollamaApiRoot, isModelAvailable, pullModel } from './ollama-pull.js';
 
 /** Memory injection configuration. */
 export interface MemoryConfig {
@@ -78,6 +79,15 @@ export interface RunErrorEvent {
   error: unknown;
 }
 
+export interface PullProgressEvent {
+  agentName: string;
+  model: string;
+  status: string;
+  digest?: string;
+  total?: number;
+  completed?: number;
+}
+
 type HistoryEntry = { role: string; content: string };
 
 /** Cached memory file entry. */
@@ -129,6 +139,8 @@ export class AgentRunner extends EventEmitter {
   private readonly memoryCache = new Map<string, MemoryCacheEntry>();
   /** Provider registry used to route model strings. */
   private readonly providerRegistry: ProviderRegistry;
+  /** Models verified as available or already pulled — avoids repeated checks. */
+  private readonly readyModels = new Set<string>();
 
   constructor(options: AgentRunnerOptions) {
     super();
@@ -311,6 +323,39 @@ export class AgentRunner extends EventEmitter {
     }
   }
 
+  /**
+   * Ensure the model is available for the given provider.
+   * For Ollama, checks local availability and auto-pulls if missing.
+   */
+  private async ensureModel(provider: { name: string }, modelName: string): Promise<void> {
+    if (this.readyModels.has(modelName)) return;
+    if (provider.name !== 'ollama') {
+      this.readyModels.add(modelName);
+      return;
+    }
+
+    const apiRoot = ollamaApiRoot(this.opts.baseUrl);
+
+    if (await isModelAvailable(apiRoot, modelName)) {
+      this.readyModels.add(modelName);
+      return;
+    }
+
+    for await (const progress of pullModel(apiRoot, modelName)) {
+      const evt: PullProgressEvent = {
+        agentName: this.opts.name,
+        model: modelName,
+        status: progress.status,
+        digest: progress.digest,
+        total: progress.total,
+        completed: progress.completed,
+      };
+      this.emit('pull:progress', evt);
+    }
+
+    this.readyModels.add(modelName);
+  }
+
   private async callModel(prompt: string): Promise<string> {
     const messages: ChatMessage[] = [];
 
@@ -335,6 +380,7 @@ export class AgentRunner extends EventEmitter {
 
     // Route to the appropriate provider based on model string prefix.
     const { provider, modelName } = resolveProvider(this.opts.model, this.providerRegistry);
+    await this.ensureModel(provider, modelName);
     const result = await provider.chat(modelName, messages);
     return result.content;
   }

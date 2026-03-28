@@ -219,6 +219,25 @@ async function spawnForeground(
     system: agent.system,
   });
 
+  let lastPct = -1;
+  runner.on('pull:progress', (evt) => {
+    if (evt.completed && evt.total) {
+      const pct = Math.floor((evt.completed / evt.total) * 100);
+      if (pct === lastPct) return;
+      lastPct = pct;
+      const isTty = process.stderr.isTTY;
+      if (isTty) {
+        process.stderr.write(`\r[${agent.name}] pulling ${evt.model}: ${pct}%`);
+        if (pct === 100) process.stderr.write('\n');
+      } else if (pct % 25 === 0) {
+        process.stderr.write(`[${agent.name}] pulling ${evt.model}: ${pct}%\n`);
+      }
+    } else {
+      lastPct = -1;
+      process.stderr.write(`[${agent.name}] pulling ${evt.model}: ${evt.status}\n`);
+    }
+  });
+
   // Reffed keepalive holds the event loop open in compiled Bun SFEs where
   // InboxWatcher's unref'd timer would otherwise let the process exit.
   const keepAlive = setInterval(() => {}, 2_147_483_647);

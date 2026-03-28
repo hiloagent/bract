@@ -14,7 +14,14 @@ type CapturedRequest = { messages: Array<{ role: string; content: string }> };
 function makeMockFetch(replies: string[]): { captured: CapturedRequest[] } {
   const captured: CapturedRequest[] = [];
   let idx = 0;
-  globalThis.fetch = mock(async (_url: string, init: any) => {
+  globalThis.fetch = mock(async (url: string | URL | Request, init?: any) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+
+    // Handle Ollama native API calls from auto-pull logic
+    if (urlStr.includes('/api/tags')) {
+      return new Response(JSON.stringify({ models: [{ name: 'test-model' }, { name: 'm:latest' }] }), { status: 200 });
+    }
+
     captured.push(JSON.parse(init.body as string));
     const content = replies[idx++] ?? 'fallback';
     return new Response(

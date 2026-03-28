@@ -40,6 +40,21 @@ export async function runWorker(): Promise<void> {
 
   const runner = new AgentRunner({ name, home, model, system, ...(baseUrl ? { baseUrl } : {}) });
 
+  let lastPct = -1;
+  runner.on('pull:progress', (evt) => {
+    if (evt.completed && evt.total) {
+      const pct = Math.floor((evt.completed / evt.total) * 100);
+      if (pct === lastPct) return;
+      lastPct = pct;
+      if (pct % 25 === 0) {
+        process.stderr.write(`[${name}] pulling ${evt.model}: ${pct}%\n`);
+      }
+    } else {
+      lastPct = -1;
+      process.stderr.write(`[${name}] pulling ${evt.model}: ${evt.status}\n`);
+    }
+  });
+
   // Reffed timer prevents the event loop from exiting in compiled Bun SFEs.
   // Without this, InboxWatcher's unref()'d timer is the only scheduled work,
   // and the process exits immediately after runner.start() returns.

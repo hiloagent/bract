@@ -46,6 +46,11 @@ export function startMockLLM(): MockLLMServer {
         return new Response('ok');
       }
 
+      // Ollama model availability check — report all models as available
+      if (url.pathname === '/api/tags') {
+        return Response.json({ models: [{ name: 'test-model:latest' }] });
+      }
+
       if (url.pathname !== '/v1/chat/completions') {
         return new Response('not found', { status: 404 });
       }
