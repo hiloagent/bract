@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { join } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { cli } from './helpers/cli';
 import { makeFixture, registerAgent, writeInboxMessage, type Fixture } from './helpers/fixtures';
 
@@ -254,5 +254,179 @@ describe('global flags', () => {
     expect(r.exitCode).toBe(0);
     expect(() => JSON.parse(r.stdout)).not.toThrow();
     fx.cleanup();
+  });
+});
+
+// ────────────────────────────────────────────────
+// TC-V: validate — additional schema rules
+// ────────────────────────────────────────────────
+
+describe('validate (additional)', () => {
+  let fx: Fixture;
+  beforeEach(() => { fx = makeFixture([{ name: 'alice', model: 'test' }]); });
+  afterEach(() => fx.cleanup());
+
+  it('TC-V11: agent name with uppercase letters exits 1', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(bad, 'version: 1\nagents:\n  - name: Alice\n    model: test\n', 'utf8');
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/name|pattern/i);
+  });
+
+  it('TC-V12: agent name starting with digit exits 1', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(bad, 'version: 1\nagents:\n  - name: 1alice\n    model: test\n', 'utf8');
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+  });
+
+  it('TC-V13: version != 1 exits 1', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(bad, 'version: 2\nagents:\n  - name: alice\n    model: test\n', 'utf8');
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toContain('version');
+  });
+
+  it('TC-V14: env field that is not an object exits 1', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(
+      bad,
+      'version: 1\nagents:\n  - name: alice\n    model: test\n    env: "not-an-object"\n',
+      'utf8',
+    );
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toContain('env');
+  });
+
+  it('TC-V15: pipe with filter field passes validation', async () => {
+    const good = join(fx.home, 'good.yml');
+    writeFileSync(
+      good,
+      'version: 1\nagents:\n  - name: alice\n    model: test\n  - name: bob\n    model: test\n    pipes:\n      - from: alice\n        filter: "keyword"\n',
+      'utf8',
+    );
+    const r = await cli(['validate', '--file', good], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('✓');
+  });
+
+  it('TC-V16: agents array with wrong version but correct structure shows version error', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(bad, 'version: "one"\nagents:\n  - name: alice\n    model: test\n', 'utf8');
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+  });
+
+  it('TC-V17: empty agents array exits 1', async () => {
+    const bad = join(fx.home, 'bad.yml');
+    writeFileSync(bad, 'version: 1\nagents: []\n', 'utf8');
+    const r = await cli(['validate', '--file', bad], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout + r.stderr).toContain('agents');
+  });
+});
+
+// ────────────────────────────────────────────────
+// TC-I: inbox — additional behaviors
+// ────────────────────────────────────────────────
+
+describe('inbox (additional)', () => {
+  let fx: Fixture;
+  beforeEach(() => {
+    fx = makeFixture([{ name: 'alice' }]);
+    registerAgent(fx.home, 'alice');
+  });
+  afterEach(() => fx.cleanup());
+
+  it('TC-I4: empty inbox shows "(empty)"', async () => {
+    const r = await cli(['inbox', 'alice'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('empty');
+  });
+
+  it('TC-I5: inbox shows message count in header', async () => {
+    await cli(['send', 'alice', 'first'], { env: { BRACT_HOME: fx.home } });
+    await cli(['send', 'alice', 'second'], { env: { BRACT_HOME: fx.home } });
+    const r = await cli(['inbox', 'alice'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('2');
+  });
+
+  it('TC-I6: inbox without agent name exits 2', async () => {
+    const r = await cli(['inbox'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('agent name required');
+  });
+});
+
+// ────────────────────────────────────────────────
+// TC-R: read — additional behaviors
+// ────────────────────────────────────────────────
+
+describe('read (additional)', () => {
+  let fx: Fixture;
+  beforeEach(() => {
+    fx = makeFixture([{ name: 'alice' }]);
+    registerAgent(fx.home, 'alice');
+  });
+  afterEach(() => fx.cleanup());
+
+  it('TC-R4: read --json on empty outbox returns empty array', async () => {
+    const r = await cli(['read', 'alice', '--json'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBe(0);
+  });
+
+  it('TC-R5: read --json with messages returns array with body fields', async () => {
+    // Write two outbox messages directly
+    const outboxDir = join(fx.home, 'agents', 'alice', 'outbox');
+    mkdirSync(outboxDir, { recursive: true });
+    const now = Date.now();
+    for (const [i, body] of ['first reply', 'second reply'].entries()) {
+      const id = `${now + i}-test`;
+      writeFileSync(
+        join(outboxDir, `${id}.msg`),
+        JSON.stringify({ id, from: 'alice', body, ts: new Date(now + i).toISOString() }) + '\n',
+        'utf8',
+      );
+    }
+
+    const r = await cli(['read', 'alice', '--json'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(Array.isArray(data)).toBe(true);
+    // Without --all, read returns only the last message
+    expect(data.length).toBe(1);
+    expect(data[0].body).toBe('second reply');
+  });
+
+  it('TC-R6: read --all --json returns all messages', async () => {
+    const outboxDir = join(fx.home, 'agents', 'alice', 'outbox');
+    mkdirSync(outboxDir, { recursive: true });
+    const now = Date.now();
+    for (const [i, body] of ['msg1', 'msg2', 'msg3'].entries()) {
+      const id = `${now + i}-test`;
+      writeFileSync(
+        join(outboxDir, `${id}.msg`),
+        JSON.stringify({ id, from: 'alice', body, ts: new Date(now + i).toISOString() }) + '\n',
+        'utf8',
+      );
+    }
+
+    const r = await cli(['read', 'alice', '--all', '--json'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(data.length).toBe(3);
+  });
+
+  it('TC-R7: read without agent name exits 2', async () => {
+    const r = await cli(['read'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain('agent name required');
   });
 });
