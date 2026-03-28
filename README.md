@@ -68,8 +68,18 @@ bun run build
 # Pull a model (if using Ollama)
 ollama pull qwen2.5:3b
 
-# Start an agent
-bract spawn my-agent --model qwen2.5:3b --system "You are a helpful assistant."
+# Scaffold a starter bract.yml
+bract init
+
+# Edit bract.yml — set the model and system prompt:
+# version: 1
+# agents:
+#   - name: my-agent
+#     model: qwen2.5:3b
+#     system: "You are a helpful assistant."
+
+# Start the agent
+bract spawn my-agent
 
 # Send it a message
 bract send my-agent "What is the capital of France?"
@@ -115,7 +125,7 @@ bract validate [--file <path>]   # validate bract.yml against schema and pipe ru
 bract init                       # scaffold a starter bract.yml
 ```
 
-**Coming next:** `bract pipe` / `bract pipes` — dynamic pipe wiring, `bract init` — scaffold a starter bract.yml.
+**Coming next:** `bract pipe` / `bract pipes` — dynamic pipe wiring.
 
 ---
 

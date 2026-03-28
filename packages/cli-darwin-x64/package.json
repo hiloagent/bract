@@ -1,6 +1,6 @@
 {
   "name": "@losoft/bract-cli-darwin-x64",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "bract CLI binary for darwin-x64",
   "os": [
     "darwin"
