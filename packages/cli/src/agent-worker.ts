@@ -25,6 +25,7 @@ export async function runWorker(): Promise<void> {
   const name = process.env.BRACT_AGENT_NAME;
   const model = process.env.BRACT_AGENT_MODEL;
   const system = process.env.BRACT_AGENT_SYSTEM;
+  const baseUrl = process.env.BRACT_AGENT_BASE_URL;
 
   if (!home || !name || !model) {
     process.stderr.write(
@@ -36,7 +37,7 @@ export async function runWorker(): Promise<void> {
   const pt = new ProcessTable(home);
   pt.setRunning(name, process.pid);
 
-  const runner = new AgentRunner({ name, home, model, system });
+  const runner = new AgentRunner({ name, home, model, system, baseUrl });
 
   // Reffed timer prevents the event loop from exiting in compiled Bun SFEs.
   // Without this, InboxWatcher's unref()'d timer is the only scheduled work,

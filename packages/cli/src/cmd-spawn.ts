@@ -4,8 +4,10 @@
  * @module @losoft/bract-cli/cmd-spawn
  */
 import { resolve, join } from 'node:path';
+import { mkdirSync, openSync } from 'node:fs';
 import { ProcessTable } from '@losoft/bract-runtime';
 import { resolveBractHome } from './home.js';
+import { spawnCmd } from './spawn-cmd.js';
 
 export interface BractAgentConfig {
   name: string;
@@ -145,15 +147,18 @@ async function spawnDetached(
   if (agent.system) env.BRACT_AGENT_SYSTEM = agent.system;
 
   const logDir = join(home, 'agents', agent.name, 'logs');
-  const logFile = Bun.file(join(logDir, 'agent.log'));
-  const logFd = await logFile.writer();
+  mkdirSync(logDir, { recursive: true });
+  // Use a real file fd rather than a pipe so the worker's stderr/stdout
+  // stay open after the CLI exits. A pipe would send SIGPIPE to the worker
+  // on its next write, killing it before any signal handler can run.
+  const logFd = openSync(join(logDir, 'agent.log'), 'a');
 
   const proc = Bun.spawn(
-    [process.execPath, '__worker'],
+    spawnCmd('__worker'),
     {
       env,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', logFd, logFd],
     },
   );
 

@@ -127,6 +127,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (argv[0] === '__supervisor') {
+    const { runSupervisor } = await import('./supervisor-worker.js');
+    await runSupervisor();
+    return;
+  }
+
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     usage();
     return;

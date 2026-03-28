@@ -4,9 +4,10 @@
  * @module @losoft/bract-cli/cmd-up
  */
 import { resolve, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, openSync } from 'node:fs';
 import { resolveBractHome } from './home.js';
 import { parseBractConfig } from './cmd-spawn.js';
+import { spawnCmd } from './spawn-cmd.js';
 
 export interface UpOptions {
   /** Path to bract.yml. Default: ./bract.yml */
@@ -65,7 +66,6 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
     const { ProcessTable } = await import('@losoft/bract-runtime');
     const pt = new ProcessTable(home);
     const supervisor = new Supervisor(home);
-    const workerPathFg = join(import.meta.dir, 'agent-worker.ts');
 
     for (const agent of config.agents) {
       const agentCopy = agent;
@@ -73,7 +73,11 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
         const env: Record<string, string> = { ...(process.env as Record<string, string>), BRACT_HOME: home, BRACT_AGENT_NAME: agentCopy.name, BRACT_AGENT_MODEL: agentCopy.model };
         if (agentCopy.system) env.BRACT_AGENT_SYSTEM = agentCopy.system;
         pt.register(agentCopy.name, agentCopy.model);
-        const proc = Bun.spawn([process.execPath, workerPathFg], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+        const logDir = join(home, 'agents', agentCopy.name, 'logs');
+        mkdirSync(logDir, { recursive: true });
+        const logFd = openSync(join(logDir, 'agent.log'), 'a');
+        const proc = Bun.spawn(spawnCmd('__worker'), { env, detached: true, stdio: ['ignore', logFd, logFd] });
+        proc.unref();
         pt.setRunning(agentCopy.name, proc.pid);
         return proc.pid;
       };
@@ -94,9 +98,8 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
   }
 
   // Detached mode
-  const workerPath = join(import.meta.dir, 'supervisor-worker.ts');
   const proc = Bun.spawn(
-    [process.execPath, workerPath],
+    spawnCmd('__supervisor'),
     {
       env: {
         ...(process.env as Record<string, string>),
