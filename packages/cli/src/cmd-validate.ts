@@ -389,6 +389,7 @@ export async function cmdValidate(opts: ValidateOptions = {}): Promise<void> {
 
 function outputResult(result: ValidationResult, json?: boolean): void {
   if (json) {
+    // JSON always goes to stdout (consumers can check result.valid)
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return;
   }
@@ -398,12 +399,12 @@ function outputResult(result: ValidationResult, json?: boolean): void {
       `✓ ${result.file} is valid (${result.agentCount} agent${result.agentCount !== 1 ? 's' : ''}, ${result.pipeCount} pipe${result.pipeCount !== 1 ? 's' : ''})\n`,
     );
   } else {
-    process.stdout.write(
+    process.stderr.write(
       `✗ ${result.file} has ${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}:\n`,
     );
     for (const e of result.errors) {
       const loc = e.path ? `  - ${e.path}: ${e.message}\n` : `  - ${e.message}\n`;
-      process.stdout.write(loc);
+      process.stderr.write(loc);
     }
   }
 }

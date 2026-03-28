@@ -35,7 +35,7 @@ export async function cmdLog(opts: LogOptions): Promise<void> {
     const agentDir = join(home, 'agents', opts.name);
     if (!existsSync(agentDir)) {
       process.stderr.write(`bract log: unknown agent "${opts.name}"\n`);
-      process.exit(1);
+      process.exit(3);
       return;
     }
     // Agent exists but no log yet

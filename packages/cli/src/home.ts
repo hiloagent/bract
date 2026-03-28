@@ -12,6 +12,13 @@ import { join } from 'node:path';
  * --home <path> flag (already stripped from argv by the dispatcher) can
  * override via the HOME_OVERRIDE module-level variable set before import.
  */
-export function resolveBractHome(override?: string): string {
-  return override ?? process.env.BRACT_HOME ?? join(homedir(), '.bract');
+/**
+ * Resolve BRACT_HOME with precedence:
+ *   1. --home flag (override param)
+ *   2. $BRACT_HOME env var
+ *   3. home: field from bract.yml (configHome param)
+ *   4. ~/.bract default
+ */
+export function resolveBractHome(override?: string, configHome?: string): string {
+  return override ?? process.env.BRACT_HOME ?? configHome ?? join(homedir(), '.bract');
 }

@@ -39,7 +39,6 @@ function supervisorPid(home: string): number | null {
 /** Start the supervisor for a bract.yml fleet. */
 export async function cmdUp(opts: UpOptions = {}): Promise<void> {
   const filePath = resolve(opts.file ?? 'bract.yml');
-  const home = resolveBractHome(opts.home);
 
   // Validate config first
   let config;
@@ -50,6 +49,8 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
     process.exit(1);
     return;
   }
+
+  const home = resolveBractHome(opts.home, config.home);
 
   // Check if already running
   const existing = supervisorPid(home);

@@ -1,5 +1,10 @@
 # Example: Automated Git Review
 
+> ⚠️ *Requires bract v0.2.0* — this example uses fan-in pipes (multiple
+> sources into one agent) and top-level `pipes:` with `transform:` fields,
+> which are not yet implemented. Running `bract validate` on it will fail
+> until those features land. Tracked in [issue #33](https://github.com/hiloagent/bract/issues/33).
+
 Two specialized agents review a pull request in parallel, then a third
 combines their findings into a single review comment.
 
