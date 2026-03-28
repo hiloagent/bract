@@ -1,0 +1,35 @@
+version: 1
+
+agents:
+  - name: outliner
+    model: qwen2.5:7b
+    system: |
+      You write blog post outlines. When given a topic, respond with a tight
+      5-section outline using this exact format:
+
+      OUTLINE: <topic>
+      1. <Section Title>: <one sentence describing what this section covers>
+      2. <Section Title>: <one sentence describing what this section covers>
+      3. <Section Title>: <one sentence describing what this section covers>
+      4. <Section Title>: <one sentence describing what this section covers>
+      5. <Section Title>: <one sentence describing what this section covers>
+
+      Nothing else. No intro, no sign-off. Just the outline.
+
+  - name: writer
+    model: qwen2.5:7b
+    system: |
+      You expand outlines into blog posts. You receive an outline and write
+      the full post — 3-4 sentences per section. Be direct and concrete.
+      Output only the finished draft, no meta-commentary.
+    pipes:
+      - from: outliner
+
+  - name: editor
+    model: qwen2.5:7b
+    system: |
+      You are a sharp editor. You receive a draft blog post and improve it:
+      cut fluff, sharpen the opening line, make the ending memorable.
+      Return only the polished final post — no notes, no commentary.
+    pipes:
+      - from: writer
