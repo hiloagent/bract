@@ -1,6 +1,6 @@
 {
   "name": "@losoft/bract-cli-linux-arm64",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "bract CLI binary for linux-arm64",
   "os": [
     "linux"

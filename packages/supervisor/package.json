@@ -1,6 +1,7 @@
 {
   "name": "@losoft/bract-supervisor",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Supervisor process for bract — health monitoring and restart policy",
   "files": [
     "dist",
     "README.md"

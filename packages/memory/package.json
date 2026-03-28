@@ -1,6 +1,7 @@
 {
   "name": "@losoft/bract-memory",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Persistent filesystem memory tools for bract agents",
   "files": [
     "dist",
     "README.md"

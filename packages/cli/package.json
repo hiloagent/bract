@@ -1,6 +1,7 @@
 {
   "name": "@losoft/bract-cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Local-first agent runtime CLI",
   "type": "module",
   "files": [
     "bin",
@@ -10,10 +11,10 @@
     "bract": "./bin/bract.js"
   },
   "optionalDependencies": {
-    "@losoft/bract-cli-linux-x64": "0.0.1",
-    "@losoft/bract-cli-linux-arm64": "0.0.1",
-    "@losoft/bract-cli-darwin-x64": "0.0.1",
-    "@losoft/bract-cli-darwin-arm64": "0.0.1"
+    "@losoft/bract-cli-linux-x64": "0.1.0",
+    "@losoft/bract-cli-linux-arm64": "0.1.0",
+    "@losoft/bract-cli-darwin-x64": "0.1.0",
+    "@losoft/bract-cli-darwin-arm64": "0.1.0"
   },
   "exports": {
     ".": {

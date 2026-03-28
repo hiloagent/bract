@@ -1,6 +1,7 @@
 {
   "name": "@losoft/bract-runner",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Agent runner — connects inbox to LLM to outbox",
   "files": [
     "dist",
     "README.md"

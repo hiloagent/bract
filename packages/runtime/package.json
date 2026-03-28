@@ -1,6 +1,7 @@
 {
   "name": "@losoft/bract-runtime",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Core runtime primitives for bract — process table, inbox/outbox, filesystem layout",
   "files": [
     "dist",
     "README.md"
