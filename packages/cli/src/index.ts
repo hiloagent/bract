@@ -38,6 +38,7 @@ import { cmdValidate } from './cmd-validate.js';
 import { cmdUp } from './cmd-up.js';
 import { cmdDown } from './cmd-down.js';
 import { cmdLog } from './cmd-log.js';
+import { cmdInit } from './cmd-init.js';
 
 interface GlobalFlags {
   home?: string;
@@ -105,6 +106,7 @@ function usage(): void {
       '  read <name> [--all]         Show outbox messages',
       '',
       'Config:',
+      '  init [--file <path>]        Scaffold a starter bract.yml',
       '  validate [--file <path>]    Validate bract.yml against schema',
       '',
       'Flags:',
@@ -216,6 +218,13 @@ async function main(): Promise<void> {
         home: flags.home,
         json,
       });
+      break;
+    }
+
+    case 'init': {
+      const { value: initFile } = extractValueFlag(cmdArgsParsed, '--file');
+      const { found: force } = extractFlag(cmdArgsParsed, '--force');
+      await cmdInit({ file: initFile, force, json });
       break;
     }
 
