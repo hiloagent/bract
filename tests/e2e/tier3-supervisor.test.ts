@@ -219,4 +219,62 @@ describe('supervisor', () => {
     const agentStarted = await waitForFile(alicePidFile, 8_000);
     if (agentStarted) trackPidFile(alicePidFile);
   }, 15_000);
+
+  // ────────────────────────────────────────────────
+  // TC-SV7–SV8: bract down --json + stale pid
+  // ────────────────────────────────────────────────
+
+  it('TC-SV7: bract down --json when not running returns { running: false }', async () => {
+    const r = await cli(['down', '--json'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(data.running).toBe(false);
+  });
+
+  it('TC-SV8: bract down --json after stopping returns { stopped: true, pid }', async () => {
+    await cli(
+      ['up', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+    );
+    const svPidFile = join(fx.home, 'supervisor.pid');
+    await waitForFile(svPidFile, 5_000);
+    const svPid = trackPidFile(svPidFile);
+
+    const r = await cli(['down', '--json'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(data.stopped).toBe(true);
+    expect(data.pid).toBe(svPid);
+  }, 20_000);
+
+  it('TC-SV9: bract down with stale pid file cleans it up and exits 0', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const pidFile = join(fx.home, 'supervisor.pid');
+    // Write a PID that definitely does not exist
+    writeFileSync(pidFile, '999999999\n', 'utf8');
+
+    const r = await cli(['down'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('stale');
+    // Stale pid file should be removed
+    expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it('TC-SV10: bract up --json when already running returns { running: true, pid }', async () => {
+    await cli(
+      ['up', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+    );
+    await waitForFile(join(fx.home, 'supervisor.pid'), 5_000);
+    trackPidFile(join(fx.home, 'supervisor.pid'));
+
+    const r2 = await cli(
+      ['up', '--file', fx.configPath, '--json'],
+      { env: { BRACT_HOME: fx.home } },
+    );
+    expect(r2.exitCode).toBe(0);
+    const data = JSON.parse(r2.stdout);
+    expect(data.running).toBe(true);
+    expect(data.pid).toBeGreaterThan(0);
+  }, 15_000);
 });
