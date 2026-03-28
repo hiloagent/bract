@@ -1,9 +1,11 @@
 /**
  * @file agent-runner.ts
- * AgentRunner — connects an agent inbox to a language model via OpenAI-compatible API.
+ * AgentRunner — connects an agent inbox to a language model via the provider abstraction.
  *
- * Reads incoming messages from the agent inbox directory, calls the configured
- * model endpoint (Ollama by default), and writes the response to the outbox.
+ * Reads incoming messages from the agent inbox directory, routes them to the
+ * appropriate model provider (Ollama, Anthropic, OpenAI, OpenRouter) based on
+ * the model string prefix, and writes the response to the outbox.
+ *
  * Only one message is processed at a time — the inbox watcher is paused during
  * inference and resumed immediately after, preventing queue pile-up.
  *
@@ -13,6 +15,10 @@ import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { readdir, stat } from 'node:fs/promises';
 import { InboxWatcher, reply, type MessageEvent } from '@losoft/bract-runtime';
+import { resolveProvider } from './provider.js';
+import type { ProviderRegistry, ChatMessage } from './provider.js';
+import { OpenAICompatProvider } from './providers/openai-compat.js';
+import { AnthropicProvider } from './providers/anthropic.js';
 
 /** Memory injection configuration. */
 export interface MemoryConfig {
@@ -32,10 +38,19 @@ export interface AgentRunnerOptions {
   name: string;
   /** BRACT_HOME path */
   home: string;
-  /** Model ID, e.g. "qwen2.5:7b" or "deepseek-r1:14b" */
+  /** Model ID, e.g. "qwen2.5:7b", "anthropic/claude-sonnet-4-6", "openai/gpt-4o" */
   model: string;
-  /** OpenAI-compatible base URL. Default: http://localhost:11434/v1 */
+  /**
+   * Override base URL for the default Ollama provider.
+   * Only used when the model has no prefix (Ollama default).
+   * @default http://localhost:11434/v1
+   */
   baseUrl?: string;
+  /**
+   * Custom provider registry. When provided, replaces the default environment-
+   * based registry entirely. Useful for testing or advanced configuration.
+   */
+  providers?: ProviderRegistry;
   /** System prompt for the agent */
   system?: string;
   /** Poll interval in ms. Default: 200 */
@@ -72,21 +87,29 @@ interface MemoryCacheEntry {
 }
 
 /**
- * AgentRunner wires an agent's inbox to a local (Ollama) language model.
+ * AgentRunner wires an agent's inbox to a language model via the provider abstraction.
  *
- * For each incoming message it calls the model and writes the reply to
- * the agent's outbox. One message is processed at a time — the watcher
- * pauses during inference and resumes immediately after.
+ * For each incoming message it routes to the appropriate provider (Ollama, Anthropic,
+ * OpenAI, or OpenRouter) based on the model string prefix, and writes the reply to
+ * the agent's outbox. One message is processed at a time — the watcher pauses during
+ * inference and resumes immediately after.
  *
  * @example
  * ```ts
+ * // Ollama (default)
  * const runner = new AgentRunner({
  *   name: 'summariser',
  *   home: process.env.BRACT_HOME!,
  *   model: 'qwen2.5:7b',
  *   system: 'You summarise text concisely.',
- *   maxHistory: 20,
- *   memory: { inject: 'all', injectLimitKb: 2, injectTotalKb: 16 },
+ * });
+ *
+ * // Anthropic (set ANTHROPIC_API_KEY env var)
+ * const runner = new AgentRunner({
+ *   name: 'researcher',
+ *   home: process.env.BRACT_HOME!,
+ *   model: 'anthropic/claude-sonnet-4-6',
+ *   system: 'You are a research assistant.',
  * });
  *
  * runner.on('run', ({ reply, durationMs }) => {
@@ -104,17 +127,23 @@ export class AgentRunner extends EventEmitter {
   private readonly history: HistoryEntry[] = [];
   /** mtime-keyed cache for memory files. */
   private readonly memoryCache = new Map<string, MemoryCacheEntry>();
+  /** Provider registry used to route model strings. */
+  private readonly providerRegistry: ProviderRegistry;
 
   constructor(options: AgentRunnerOptions) {
     super();
     this.opts = {
       baseUrl: 'http://localhost:11434/v1',
+      providers: undefined as unknown as ProviderRegistry,
       system: '',
       pollIntervalMs: 200,
       maxHistory: 0,
       memory: undefined as unknown as Required<AgentRunnerOptions>['memory'],
       ...options,
     };
+
+    // Build provider registry — caller can supply a custom one (useful for tests).
+    this.providerRegistry = options.providers ?? this.buildDefaultRegistry();
 
     const agentsRoot = join(this.opts.home, 'agents');
     this.watcher = InboxWatcher.forAgent(agentsRoot, this.opts.name, {
@@ -128,6 +157,30 @@ export class AgentRunner extends EventEmitter {
     this.watcher.on('error', (event) => {
       this.emit('error', event);
     });
+  }
+
+  /** Build the default provider registry from environment variables. */
+  private buildDefaultRegistry(): ProviderRegistry {
+    return {
+      ollama: new OpenAICompatProvider({
+        name: 'ollama',
+        baseUrl: this.opts.baseUrl,
+      }),
+      anthropic: new AnthropicProvider({
+        apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+        baseUrl: process.env.ANTHROPIC_BASE_URL,
+      }),
+      openai: new OpenAICompatProvider({
+        name: 'openai',
+        baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+        apiKey: process.env.OPENAI_API_KEY,
+      }),
+      openrouter: new OpenAICompatProvider({
+        name: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: process.env.OPENROUTER_API_KEY,
+      }),
+    };
   }
 
   /** Start the inbox watcher. Returns when the runner is active. */
@@ -259,7 +312,7 @@ export class AgentRunner extends EventEmitter {
   }
 
   private async callModel(prompt: string): Promise<string> {
-    const messages: HistoryEntry[] = [];
+    const messages: ChatMessage[] = [];
 
     // Build system prompt with optional memory injection
     const memoryContext = await this.loadMemoryContext();
@@ -274,27 +327,15 @@ export class AgentRunner extends EventEmitter {
     }
 
     // Include conversation history (empty when maxHistory=0).
-    messages.push(...this.history);
+    for (const h of this.history) {
+      messages.push({ role: h.role as 'user' | 'assistant', content: h.content });
+    }
 
     messages.push({ role: 'user', content: prompt });
 
-    const response = await fetch(`${this.opts.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: this.opts.model, messages, stream: false }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Model API error ${response.status}: ${text}`);
-    }
-
-    const data = (await response.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Model returned empty response');
-    return content;
+    // Route to the appropriate provider based on model string prefix.
+    const { provider, modelName } = resolveProvider(this.opts.model, this.providerRegistry);
+    const result = await provider.chat(modelName, messages);
+    return result.content;
   }
 }

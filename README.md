@@ -83,23 +83,27 @@ bract validate --json
 
 ## CLI
 
-The following commands are implemented and working:
-
 ```sh
+# Fleet
+bract up [--follow]              # start supervisor and all agents from bract.yml
+bract down                       # stop supervisor and all agents
+bract ps                         # list agents and their status
+
 # Agents
-bract spawn <name> --model <m>    # start an agent
-bract ps                          # list agents and their status
+bract spawn <name>               # start an agent from bract.yml
+bract log <name> [-f]            # stream agent logs
 
 # Messaging
-bract send <name> "<message>"     # send a message to an agent's inbox
-bract read <name>                 # read latest outbox message(s)
-bract inbox <name>                # show pending inbox messages
+bract send <name> "<message>"    # send a message to an agent's inbox
+bract read <name>                # read latest outbox message(s)
+bract inbox <name>               # show pending inbox messages
 
 # Config
-bract validate [--file <path>]    # validate bract.yml against schema and pipe rules
+bract validate [--file <path>]   # validate bract.yml against schema and pipe rules
+bract init                       # scaffold a starter bract.yml
 ```
 
-**Coming in v0.2:** `bract up` / `bract down`, `bract log`, `bract pipe`, supervisor with restart policy.
+**Coming next:** `bract pipe` / `bract pipes` — dynamic pipe wiring, `bract init` — scaffold a starter bract.yml.
 
 ---
 
@@ -133,17 +137,35 @@ Memory files are injected into the agent's system prompt automatically.
 
 ## Pluggable models
 
-bract uses the OpenAI-compatible chat completions API. Any endpoint that speaks it works:
+bract routes models by prefix — Ollama (default), Anthropic, OpenAI, and OpenRouter are all supported. Any OpenAI-compatible endpoint also works:
 
 ```sh
-# Local via Ollama (default base URL: http://localhost:11434/v1)
+# Local via Ollama (default — no prefix needed)
 bract spawn my-agent --model qwen2.5:3b
 
-# Remote — set base URL via env
-BRACT_BASE_URL=https://api.openai.com/v1 \
+# Explicit Ollama prefix
+bract spawn my-agent --model ollama/qwen3.5:9b
+
+# Anthropic (set ANTHROPIC_API_KEY)
+ANTHROPIC_API_KEY=sk-ant-... \
+bract spawn my-agent --model anthropic/claude-sonnet-4-6
+
+# OpenAI (set OPENAI_API_KEY)
 OPENAI_API_KEY=sk-... \
-bract spawn my-agent --model gpt-4o
+bract spawn my-agent --model openai/gpt-4o
+
+# OpenRouter (set OPENROUTER_API_KEY)
+OPENROUTER_API_KEY=sk-or-... \
+bract spawn my-agent --model openrouter/anthropic/claude-3.5-sonnet
 ```
+
+| Prefix | Provider | Env vars |
+|--------|----------|----------|
+| _(none)_ | Ollama | `OLLAMA_BASE_URL` (default: `http://localhost:11434/v1`) |
+| `ollama/` | Ollama | `OLLAMA_BASE_URL` |
+| `anthropic/` | Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` |
+| `openai/` | OpenAI | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
+| `openrouter/` | OpenRouter | `OPENROUTER_API_KEY` |
 
 See [`docs/adrs/ADR-006-model-routing.md`](docs/adrs/ADR-006-model-routing.md) for the full model routing spec.
 
@@ -189,19 +211,19 @@ they just won't be restarted until the supervisor comes back.
 
 ## Status
 
-Early alpha. Core messaging and agent lifecycle are working. Fleet management (supervisor, `bract up`, pipe engine) is next.
+Early alpha. Core messaging and agent lifecycle are working. Fleet management (supervisor, `bract up`, pipe engine, model routing) is complete. Dynamic pipe CLI and plugin hooks are next.
 
 - [x] Filesystem layout ([ADR-001](docs/adrs/ADR-001-filesystem-as-process-table.md))
 - [x] Message module (inbox/outbox read/write, consume-to-processed)
 - [x] Inbox watcher (filesystem polling → agent trigger, [ADR-002](docs/adrs/ADR-002-inbox-watcher-polling.md))
-- [x] AgentRunner (connects inbox → LLM → outbox, OpenAI-compatible API)
-- [x] CLI (`bract ps`, `bract spawn`, `bract send`, `bract read`, `bract inbox`, `bract validate`)
+- [x] AgentRunner (connects inbox → LLM → outbox, multi-provider routing)
+- [x] CLI (`bract ps`, `bract spawn`, `bract send`, `bract read`, `bract inbox`, `bract validate`, `bract up`, `bract down`, `bract log`)
 - [x] Memory tools (`memory_read`, `memory_write`, `memory_append`, `memory_replace`, `memory_grep`, `memory_glob`, `memory_delete`)
 - [x] Memory injection (agent memory files in system prompt)
-- [ ] Supervisor with restart policy ([ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md))
-- [ ] `bract up` / `bract down` ([ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md))
-- [ ] Pipe engine (wire agent outboxes together, [ADR-008](docs/adrs/ADR-008-pipe-engine.md))
-- [ ] Model routing (Ollama + Anthropic + OpenRouter, [ADR-006](docs/adrs/ADR-006-model-routing.md))
+- [x] Supervisor with restart policy ([ADR-003](docs/adrs/ADR-003-supervisor-and-restart-policy.md))
+- [x] `bract up` / `bract down` / `bract log` ([ADR-004](docs/adrs/ADR-004-bract-yml-fleet-config.md))
+- [x] Pipe engine (wire agent outboxes together via bract.yml, [ADR-008](docs/adrs/ADR-008-pipe-engine.md))
+- [x] Model routing (Ollama, Anthropic, OpenAI, OpenRouter, [ADR-006](docs/adrs/ADR-006-model-routing.md))
 - [ ] Plugin hooks ([ADR-005](docs/adrs/ADR-005-plugin-model.md))
 
 ---
