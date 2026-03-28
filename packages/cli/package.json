@@ -13,8 +13,7 @@
     "@losoft/bract-cli-linux-x64": "0.0.1",
     "@losoft/bract-cli-linux-arm64": "0.0.1",
     "@losoft/bract-cli-darwin-x64": "0.0.1",
-    "@losoft/bract-cli-darwin-arm64": "0.0.1",
-    "@losoft/bract-cli-windows-x64": "0.0.1"
+    "@losoft/bract-cli-darwin-arm64": "0.0.1"
   },
   "exports": {
     ".": {

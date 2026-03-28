@@ -4,10 +4,10 @@
  * @module @losoft/bract-cli/cmd-spawn
  */
 import { resolve, join } from 'node:path';
-import { mkdirSync, openSync } from 'node:fs';
+import { mkdirSync, openSync, closeSync } from 'node:fs';
 import { ProcessTable } from '@losoft/bract-runtime';
 import { resolveBractHome } from './home.js';
-import { spawnCmd } from './spawn-cmd.js';
+import { sentinelCommand } from './spawn-args.js';
 
 export interface BractAgentConfig {
   name: string;
@@ -86,10 +86,44 @@ export async function parseBractConfig(filePath: string): Promise<BractConfig> {
     if (typeof agent.model !== 'string' || agent.model.length === 0) {
       throw new Error(`bract.yml: agents[${i}].model is required`);
     }
+    const restartVal = agent.restart;
+    let restart: 'always' | 'on-failure' | 'never' | undefined;
+    if (restartVal !== undefined) {
+      if (restartVal !== 'always' && restartVal !== 'on-failure' && restartVal !== 'never') {
+        throw new Error(
+          `bract.yml: agents[${i}].restart must be 'always', 'on-failure', or 'never' (got ${JSON.stringify(restartVal)})`,
+        );
+      }
+      restart = restartVal;
+    }
+
+    const rawPipes = agent.pipes;
+    let pipes: Array<{ from: string; filter?: string }> | undefined;
+    if (rawPipes !== undefined) {
+      if (!Array.isArray(rawPipes)) {
+        throw new Error(`bract.yml: agents[${i}].pipes must be an array`);
+      }
+      pipes = (rawPipes as unknown[]).map((p, j) => {
+        if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+          throw new Error(`bract.yml: agents[${i}].pipes[${j}] must be an object`);
+        }
+        const pipe = p as Record<string, unknown>;
+        if (typeof pipe.from !== 'string' || pipe.from.length === 0) {
+          throw new Error(`bract.yml: agents[${i}].pipes[${j}].from is required`);
+        }
+        return {
+          from: pipe.from,
+          ...(typeof pipe.filter === 'string' ? { filter: pipe.filter } : {}),
+        };
+      });
+    }
+
     return {
       name: agent.name,
       model: agent.model,
       system: typeof agent.system === 'string' ? agent.system : undefined,
+      restart,
+      pipes,
     };
   });
 
@@ -148,19 +182,17 @@ async function spawnDetached(
 
   const logDir = join(home, 'agents', agent.name, 'logs');
   mkdirSync(logDir, { recursive: true });
-  // Use a real file fd rather than a pipe so the worker's stderr/stdout
-  // stay open after the CLI exits. A pipe would send SIGPIPE to the worker
-  // on its next write, killing it before any signal handler can run.
   const logFd = openSync(join(logDir, 'agent.log'), 'a');
 
   const proc = Bun.spawn(
-    spawnCmd('__worker'),
+    sentinelCommand('__worker'),
     {
       env,
       detached: true,
       stdio: ['ignore', logFd, logFd],
     },
   );
+  closeSync(logFd);
 
   const pid = proc.pid;
   pt.setRunning(agent.name, pid);

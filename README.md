@@ -34,6 +34,18 @@ $BRACT_HOME/
 
 ---
 
+## Platform support
+
+bract relies on Unix process semantics (POSIX signals, pid-based supervision, file descriptor inheritance). It runs on:
+
+- **Linux** — x64, arm64
+- **macOS** — x64, arm64
+- **Windows** — via [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (use the Linux binary inside WSL)
+
+Native Windows is not supported.
+
+---
+
 ## Getting started
 
 ### Prerequisites

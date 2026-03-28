@@ -4,10 +4,10 @@
  * @module @losoft/bract-cli/cmd-up
  */
 import { resolve, join } from 'node:path';
-import { existsSync, readFileSync, mkdirSync, openSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import { resolveBractHome } from './home.js';
 import { parseBractConfig } from './cmd-spawn.js';
-import { spawnCmd } from './spawn-cmd.js';
+import { sentinelCommand } from './spawn-args.js';
 
 export interface UpOptions {
   /** Path to bract.yml. Default: ./bract.yml */
@@ -76,8 +76,8 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
         const logDir = join(home, 'agents', agentCopy.name, 'logs');
         mkdirSync(logDir, { recursive: true });
         const logFd = openSync(join(logDir, 'agent.log'), 'a');
-        const proc = Bun.spawn(spawnCmd('__worker'), { env, detached: true, stdio: ['ignore', logFd, logFd] });
-        proc.unref();
+        const proc = Bun.spawn(sentinelCommand('__worker'), { env, stdio: ['ignore', logFd, logFd] });
+        closeSync(logFd);
         pt.setRunning(agentCopy.name, proc.pid);
         return proc.pid;
       };
@@ -93,13 +93,14 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
 
     process.stdout.write('starting ' + config.agents.length + ' agent(s)...\n');
     supervisor.start();
+    setInterval(() => {}, 2_147_483_647); // keepalive — holds event loop after agent exits
     await new Promise<void>(() => {});
     return;
   }
 
   // Detached mode
   const proc = Bun.spawn(
-    spawnCmd('__supervisor'),
+    sentinelCommand('__supervisor'),
     {
       env: {
         ...(process.env as Record<string, string>),

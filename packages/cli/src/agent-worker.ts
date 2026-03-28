@@ -9,7 +9,8 @@
  *   BRACT_HOME          - Path to bract home directory
  *   BRACT_AGENT_NAME    - Agent name
  *   BRACT_AGENT_MODEL   - Model identifier
- *   BRACT_AGENT_SYSTEM  - (optional) System prompt
+ *   BRACT_AGENT_SYSTEM   - (optional) System prompt
+ *   BRACT_AGENT_BASE_URL - (optional) OpenAI-compatible base URL override
  *
  * @module @losoft/bract-cli/agent-worker
  */
@@ -37,7 +38,7 @@ export async function runWorker(): Promise<void> {
   const pt = new ProcessTable(home);
   pt.setRunning(name, process.pid);
 
-  const runner = new AgentRunner({ name, home, model, system, baseUrl });
+  const runner = new AgentRunner({ name, home, model, system, ...(baseUrl ? { baseUrl } : {}) });
 
   // Reffed timer prevents the event loop from exiting in compiled Bun SFEs.
   // Without this, InboxWatcher's unref()'d timer is the only scheduled work,

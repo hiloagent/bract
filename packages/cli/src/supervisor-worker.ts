@@ -12,16 +12,13 @@
  * @module @losoft/bract-cli/supervisor-worker
  */
 import { join } from 'node:path';
-import { unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, openSync, closeSync, unlinkSync, existsSync } from 'node:fs';
 import { Supervisor } from '@losoft/bract-supervisor';
 import { ProcessTable, PipeRouter } from '@losoft/bract-runtime';
 import type { PipeDef } from '@losoft/bract-runtime';
 import { parseBractConfig } from './cmd-spawn.js';
-import { spawnCmd } from './spawn-cmd.js';
+import { sentinelCommand } from './spawn-args.js';
 
-/**
- * Entry point called when the binary is invoked with __supervisor sentinel.
- */
 export async function runSupervisor(): Promise<void> {
   const home = process.env.BRACT_HOME;
   const configPath = process.env.BRACT_CONFIG;
@@ -29,6 +26,7 @@ export async function runSupervisor(): Promise<void> {
   if (!home || !configPath) {
     process.stderr.write('supervisor-worker: BRACT_HOME and BRACT_CONFIG are required\n');
     process.exit(1);
+    return;
   }
 
   let config;
@@ -37,9 +35,9 @@ export async function runSupervisor(): Promise<void> {
   } catch (e) {
     process.stderr.write(`supervisor-worker: ${(e as Error).message}\n`);
     process.exit(1);
+    return;
   }
 
-  // Use __worker sentinel so compiled SFE can spawn itself as an agent worker.
   const pt = new ProcessTable(home);
   const supervisor = new Supervisor(home);
 
@@ -55,10 +53,15 @@ export async function runSupervisor(): Promise<void> {
 
     pt.register(agent.name, agent.model);
 
-    const proc = Bun.spawn(spawnCmd('__worker'), {
+    const logDir = join(home!, 'agents', agent.name, 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const logFd = openSync(join(logDir, 'agent.log'), 'a');
+
+    const proc = Bun.spawn(sentinelCommand('__worker'), {
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', logFd, logFd],
     });
+    closeSync(logFd);
 
     pt.setRunning(agent.name, proc.pid);
     process.stderr.write(`[supervisor] started ${agent.name} (pid ${proc.pid})\n`);
@@ -74,15 +77,15 @@ export async function runSupervisor(): Promise<void> {
     spawnAgent(agent);
   }
 
-  supervisor.on('agent:died', ({ name, pid }) => {
+  supervisor.on('agent:died', ({ name, pid }: { name: string; pid: number }) => {
     process.stderr.write(`[supervisor] ${name} (pid ${pid}) died\n`);
   });
 
-  supervisor.on('agent:restarted', ({ name, newPid, restartCount }) => {
+  supervisor.on('agent:restarted', ({ name, newPid, restartCount }: { name: string; newPid: number; restartCount: number }) => {
     process.stderr.write(`[supervisor] restarted ${name} (pid ${newPid}, restart #${restartCount})\n`);
   });
 
-  supervisor.on('agent:exhausted', ({ name, restartCount }) => {
+  supervisor.on('agent:exhausted', ({ name, restartCount }: { name: string; restartCount: number }) => {
     process.stderr.write(`[supervisor] ${name} exhausted restart limit (${restartCount} restarts)\n`);
   });
 
@@ -102,14 +105,15 @@ export async function runSupervisor(): Promise<void> {
     process.stderr.write(`[supervisor] pipe router started (${pipeDefs.length} pipe(s))\n`);
   }
 
-  // Reffed keepalive prevents the event loop from exiting when agent pipes close.
-  // Without this, the supervisor exits when the last agent process dies, preventing restarts.
-  const keepAlive = setInterval(() => {}, 2_147_483_647);
-
   async function shutdown() {
-    clearInterval(keepAlive);
     supervisor.stop();
     pipeRouter?.stop();
+    // SIGTERM all running agents so they can clean up before we exit
+    for (const entry of pt.snapshot()) {
+      if (entry.status === 'running' && entry.pid !== null) {
+        try { process.kill(entry.pid, 'SIGTERM'); } catch { /* already dead */ }
+      }
+    }
     const pidFile = join(home!, 'supervisor.pid');
     if (existsSync(pidFile)) try { unlinkSync(pidFile); } catch { /* ignore */ }
     process.exit(0);
@@ -120,6 +124,13 @@ export async function runSupervisor(): Promise<void> {
 
   supervisor.start();
 
+  // Reffed keepalive holds the event loop open even after all supervised agents
+  // have exited (e.g. after SIGKILL). Without this, the process exits when the
+  // last child process ref drops, before the supervisor can restart them.
+  const keepAlive = setInterval(() => {}, 2_147_483_647);
+
   // Block until signal
   await new Promise<void>(() => {});
+
+  clearInterval(keepAlive); // unreachable but satisfies linters
 }

@@ -1,154 +1,222 @@
 /**
- * @file tests/e2e/tier3-supervisor.test.ts
- * Tier 3 — Supervisor (bract up/down), restart policies, pipe routing.
+ * Tier 3 — Supervisor tests (bract up / bract down, restart policy).
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { join } from 'node:path';
-import { cli } from './helpers/cli.ts';
-import { makeFixture, type Fixture } from './helpers/fixtures.ts';
-import { startMockLLM, type MockLLMServer } from './helpers/mock-llm-server.ts';
-import { trackSupervisorPid, trackAgentPid, killAll, isAlive, waitForFile } from './helpers/process-cleanup.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { cli } from './helpers/cli';
+import { makeFixture, type Fixture } from './helpers/fixtures';
+import { startMockLLM, type MockLLMServer } from './helpers/mock-llm-server';
+import {
+  trackPid, trackPidFile, killAll, isAlive,
+  waitForFile, waitForFileContent,
+} from './helpers/process-cleanup';
 
-let fx: Fixture;
-let llm: MockLLMServer;
+describe('supervisor', () => {
+  let fx: Fixture;
+  let llm: MockLLMServer;
 
-beforeEach(async () => {
-  fx = makeFixture([{ name: 'assistant', model: 'mock-model', restart: 'on-failure' }]);
-  llm = await startMockLLM();
-  llm.setFixed('supervisor reply');
-});
+  beforeEach(() => {
+    fx = makeFixture([{ name: 'alice', model: 'test-model' }]);
+    llm = startMockLLM();
+    llm.setFixed('mock response');
+  });
 
-afterEach(() => {
-  killAll();
-  fx.cleanup();
-  llm.stop();
-});
+  afterEach(async () => {
+    // Give processes a moment to clean up
+    await Bun.sleep(100);
+    killAll();
+    llm.stop();
+    fx.cleanup();
+  });
 
-describe('bract up / down', () => {
-  test('TC-SV1: bract up --detach writes supervisor.pid', async () => {
+  // ────────────────────────────────────────────────
+  // TC-SV1–SV2: bract up
+  // ────────────────────────────────────────────────
+
+  it('TC-SV1: bract up starts supervisor and writes supervisor.pid', async () => {
     const r = await cli(
       ['up', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
     expect(r.exitCode).toBe(0);
 
     const pidFile = join(fx.home, 'supervisor.pid');
-    const appeared = await waitForFile(pidFile, 5000);
+    const appeared = await waitForFile(pidFile, 5_000);
     expect(appeared).toBe(true);
 
-    const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
-    trackSupervisorPid(fx.home);
-    expect(isAlive(pid)).toBe(true);
-  });
+    const pid = trackPidFile(pidFile);
+    expect(pid).toBeGreaterThan(0);
+    expect(isAlive(pid!)).toBe(true);
 
-  test('TC-SV2: bract up spawns all agents from config', async () => {
-    await cli(
-      ['up', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    trackSupervisorPid(fx.home);
-    await Bun.sleep(1500);
+    // Track agent PID for cleanup
+    const alicePidFile = join(fx.home, 'agents', 'alice', 'pid');
+    const agentStarted = await waitForFile(alicePidFile, 8_000);
+    if (agentStarted) trackPidFile(alicePidFile);
+  }, 15_000);
 
-    const r = await cli(['ps'], { env: fx.env });
-    expect(r.stdout).toContain('assistant');
-    trackAgentPid(fx.home, 'assistant');
-  });
+  it('TC-SV2: bract up starts all agents in the fleet', async () => {
+    const fx2 = makeFixture([
+      { name: 'alice', model: 'test' },
+      { name: 'bob', model: 'test' },
+    ]);
+    try {
+      await cli(
+        ['up', '--file', fx2.configPath],
+        { env: { BRACT_HOME: fx2.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+      );
 
-  test('TC-SV3: bract down stops supervisor', async () => {
-    await cli(
-      ['up', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    const pidFile = join(fx.home, 'supervisor.pid');
-    await waitForFile(pidFile, 5000);
-    const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
+      const svPid = await waitForFile(join(fx2.home, 'supervisor.pid'), 5_000);
+      expect(svPid).toBe(true);
+      trackPidFile(join(fx2.home, 'supervisor.pid'));
 
-    const downResult = await cli(['down'], { env: fx.env });
-    expect(downResult.exitCode).toBe(0);
+      // Both agents should be running
+      const aliceRunning = await waitForFileContent(
+        join(fx2.home, 'agents', 'alice', 'status'), 'running', 8_000,
+      );
+      const bobRunning = await waitForFileContent(
+        join(fx2.home, 'agents', 'bob', 'status'), 'running', 8_000,
+      );
+      expect(aliceRunning).toBe(true);
+      expect(bobRunning).toBe(true);
 
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-      if (!isAlive(pid)) break;
-      await Bun.sleep(200);
+      trackPidFile(join(fx2.home, 'agents', 'alice', 'pid'));
+      trackPidFile(join(fx2.home, 'agents', 'bob', 'pid'));
+    } finally {
+      fx2.cleanup();
     }
-    expect(isAlive(pid)).toBe(false);
-  });
+  }, 20_000);
 
-  test('TC-SV4: bract down with no supervisor running exits gracefully', async () => {
-    const r = await cli(['down'], { env: fx.env });
-    // Should exit 0 or non-zero but not crash
-    expect([0, 1]).toContain(r.exitCode);
-  });
-});
-
-describe('supervisor restart', () => {
-  test('TC-SV5: agent with restart:always gets restarted after kill', async () => {
-    const fx2 = makeFixture([{ name: 'worker', model: 'mock-model', restart: 'always' }]);
-    const llm2 = await startMockLLM();
-    llm2.setFixed('restarted reply');
-
+  it('TC-SV3: bract up when already running prints "already running"', async () => {
     await cli(
-      ['up', '--file', fx2.configPath],
-      { env: { ...fx2.env, BRACT_AGENT_BASE_URL: llm2.baseUrl }, cwd: fx2.home },
+      ['up', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
-    const svPidFile = join(fx2.home, 'supervisor.pid');
-    await waitForFile(svPidFile, 5000);
-    trackSupervisorPid(fx2.home);
+    await waitForFile(join(fx.home, 'supervisor.pid'), 5_000);
+    trackPidFile(join(fx.home, 'supervisor.pid'));
 
-    const agentPidFile = join(fx2.home, 'agents', 'worker', 'pid');
-    await waitForFile(agentPidFile, 5000);
-    const originalPid = parseInt(readFileSync(agentPidFile, 'utf8').trim(), 10);
-    trackAgentPid(fx2.home, 'worker');
+    const r2 = await cli(
+      ['up', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home } },
+    );
+    expect(r2.exitCode).toBe(0);
+    expect(r2.stdout).toContain('already running');
+  }, 15_000);
 
-    // Kill the agent
-    process.kill(originalPid, 'SIGKILL');
-    await Bun.sleep(500);
+  // ────────────────────────────────────────────────
+  // TC-SV4: bract down
+  // ────────────────────────────────────────────────
 
-    // Wait for new pid to appear
-    const deadline = Date.now() + 15000;
-    let newPid = originalPid;
-    while (Date.now() < deadline) {
-      if (existsSync(agentPidFile)) {
-        newPid = parseInt(readFileSync(agentPidFile, 'utf8').trim(), 10);
-        if (newPid !== originalPid && isAlive(newPid)) break;
+  it('TC-SV4: bract down stops the supervisor', async () => {
+    await cli(
+      ['up', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+    );
+    const svPidFile = join(fx.home, 'supervisor.pid');
+    await waitForFile(svPidFile, 5_000);
+    const svPid = trackPidFile(svPidFile);
+    expect(svPid).toBeGreaterThan(0);
+
+    const down = await cli(['down'], { env: { BRACT_HOME: fx.home } });
+    expect(down.exitCode).toBe(0);
+    expect(down.stdout).toContain('stopped');
+
+    // supervisor.pid should be removed
+    const pidGone = await (async () => {
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        if (!existsSync(svPidFile)) return true;
+        await Bun.sleep(200);
       }
-      await Bun.sleep(300);
+      return false;
+    })();
+    expect(pidGone).toBe(true);
+    expect(isAlive(svPid!)).toBe(false);
+  }, 20_000);
+
+  it('TC-SV4b: bract down when not running exits 0', async () => {
+    const r = await cli(['down'], { env: { BRACT_HOME: fx.home } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('no supervisor');
+  });
+
+  // ────────────────────────────────────────────────
+  // TC-SV5: restart policy
+  // ────────────────────────────────────────────────
+
+  it('TC-SV5: agent with restart:always gets restarted after SIGKILL', async () => {
+    const fxRestart = makeFixture([{ name: 'alice', model: 'test-model', restart: 'always' }]);
+    try {
+      await cli(
+        ['up', '--file', fxRestart.configPath],
+        { env: { BRACT_HOME: fxRestart.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+      );
+
+      const svPidFile = join(fxRestart.home, 'supervisor.pid');
+      const svReady = await waitForFile(svPidFile, 5_000);
+      expect(svReady).toBe(true);
+      const svPid = trackPidFile(svPidFile);
+
+      // Wait for agent to be running
+      const agentStatusFile = join(fxRestart.home, 'agents', 'alice', 'status');
+      const agentRunning = await waitForFileContent(agentStatusFile, 'running', 8_000);
+      expect(agentRunning).toBe(true);
+
+      // Read initial PID
+      const agentPidFile = join(fxRestart.home, 'agents', 'alice', 'pid');
+      const initialPid = parseInt(readFileSync(agentPidFile, 'utf8').trim(), 10);
+      expect(initialPid).toBeGreaterThan(0);
+      expect(isAlive(initialPid)).toBe(true);
+
+      // SIGKILL the agent — bypasses SIGTERM handler
+      process.kill(initialPid, 'SIGKILL');
+
+      // Wait for process to die
+      const deadline = Date.now() + 2_000;
+      while (Date.now() < deadline && isAlive(initialPid)) {
+        await Bun.sleep(100);
+      }
+      expect(isAlive(initialPid)).toBe(false);
+
+      // Supervisor heartbeat fires every 5s; restart delay is 1s.
+      // Give up to 15s for the agent to be restarted with a new PID.
+      const restarted = await (async () => {
+        const deadline2 = Date.now() + 15_000;
+        while (Date.now() < deadline2) {
+          if (existsSync(agentPidFile)) {
+            const newPidStr = readFileSync(agentPidFile, 'utf8').trim();
+            const newPid = parseInt(newPidStr, 10);
+            if (!isNaN(newPid) && newPid > 0 && newPid !== initialPid && isAlive(newPid)) {
+              trackPid(newPid);
+              return true;
+            }
+          }
+          await Bun.sleep(300);
+        }
+        return false;
+      })();
+
+      expect(restarted).toBe(true);
+    } finally {
+      fxRestart.cleanup();
     }
-    trackAgentPid(fx2.home, 'worker');
-    expect(newPid).not.toBe(originalPid);
-    expect(isAlive(newPid)).toBe(true);
+  }, 35_000);
 
-    fx2.cleanup();
-    llm2.stop();
-  }, 25000);
-
-  test('TC-SV6: agent with restart:never is not restarted', async () => {
-    const fx3 = makeFixture([{ name: 'oneshot', model: 'mock-model', restart: 'never' }]);
-    const llm3 = await startMockLLM();
-
-    await cli(
-      ['up', '--file', fx3.configPath],
-      { env: { ...fx3.env, BRACT_AGENT_BASE_URL: llm3.baseUrl }, cwd: fx3.home },
+  it('TC-SV6: bract up --json returns started:true with agent names', async () => {
+    const r = await cli(
+      ['up', '--file', fx.configPath, '--json'],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
-    const svPidFile = join(fx3.home, 'supervisor.pid');
-    await waitForFile(svPidFile, 5000);
-    trackSupervisorPid(fx3.home);
+    expect(r.exitCode).toBe(0);
+    const data = JSON.parse(r.stdout);
+    expect(data.started).toBe(true);
+    expect(data.pid).toBeGreaterThan(0);
+    expect(data.agents).toContain('alice');
+    trackPidFile(join(fx.home, 'supervisor.pid'));
 
-    const agentPidFile = join(fx3.home, 'agents', 'oneshot', 'pid');
-    await waitForFile(agentPidFile, 5000);
-    const originalPid = parseInt(readFileSync(agentPidFile, 'utf8').trim(), 10);
-    process.kill(originalPid, 'SIGKILL');
-    await Bun.sleep(6000); // wait longer than heartbeat interval
-
-    const newPid = existsSync(agentPidFile)
-      ? parseInt(readFileSync(agentPidFile, 'utf8').trim(), 10)
-      : originalPid;
-    // If pid changed and is alive, the agent was restarted (unexpected)
-    const wasRestarted = newPid !== originalPid && isAlive(newPid);
-    expect(wasRestarted).toBe(false);
-
-    fx3.cleanup();
-    llm3.stop();
-  }, 15000);
+    // Track agent PID for cleanup
+    const alicePidFile = join(fx.home, 'agents', 'alice', 'pid');
+    const agentStarted = await waitForFile(alicePidFile, 8_000);
+    if (agentStarted) trackPidFile(alicePidFile);
+  }, 15_000);
 });

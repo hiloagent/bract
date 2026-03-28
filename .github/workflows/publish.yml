@@ -31,11 +31,10 @@ jobs:
       - name: Cross-compile CLI binaries
         run: |
           cd packages/cli
-          bun build ./src/index.ts --compile --target=bun-linux-x64    --outfile ../cli-linux-x64/bract
-          bun build ./src/index.ts --compile --target=bun-linux-arm64   --outfile ../cli-linux-arm64/bract
-          bun build ./src/index.ts --compile --target=bun-darwin-x64    --outfile ../cli-darwin-x64/bract
-          bun build ./src/index.ts --compile --target=bun-darwin-arm64  --outfile ../cli-darwin-arm64/bract
-          bun build ./src/index.ts --compile --target=bun-windows-x64   --outfile ../cli-windows-x64/bract.exe
+          bun build ./src/index.ts --compile --target=bun-linux-x64   --outfile ../cli-linux-x64/bract
+          bun build ./src/index.ts --compile --target=bun-linux-arm64  --outfile ../cli-linux-arm64/bract
+          bun build ./src/index.ts --compile --target=bun-darwin-x64   --outfile ../cli-darwin-x64/bract
+          bun build ./src/index.ts --compile --target=bun-darwin-arm64 --outfile ../cli-darwin-arm64/bract
 
       - name: Publish to npm
         env:
@@ -50,5 +49,4 @@ jobs:
           cd ../cli-linux-arm64      && bun publish --access public
           cd ../cli-darwin-x64       && bun publish --access public
           cd ../cli-darwin-arm64     && bun publish --access public
-          cd ../cli-windows-x64      && bun publish --access public
           cd ../cli                  && bun publish --access public

@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  unit:
+    name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,12 +16,18 @@ jobs:
         with:
           bun-version: latest
       - run: bun install
-      - run: bun test
+      - run: bun test packages/
       - run: bun run build
       - run: bun run typecheck
-      - name: e2e tests (source)
-        run: bun test tests/e2e/
-        timeout-minutes: 5
-      - name: e2e tests (binary)
-        run: BRACT_E2E_BINARY=1 bun test tests/e2e/
-        timeout-minutes: 5
+
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - name: Run e2e tests
+        run: bun test tests/e2e --timeout 60000

@@ -12,16 +12,18 @@ const PLATFORM_PACKAGES = {
   'linux-arm64':  '@losoft/bract-cli-linux-arm64',
   'darwin-x64':   '@losoft/bract-cli-darwin-x64',
   'darwin-arm64': '@losoft/bract-cli-darwin-arm64',
-  'win32-x64':    '@losoft/bract-cli-windows-x64',
 };
 
 const key = `${process.platform}-${process.arch}`;
 const platformPkg = PLATFORM_PACKAGES[key];
 
 if (!platformPkg) {
+  const isWindows = process.platform === 'win32';
   process.stderr.write(
     `bract: unsupported platform: ${key}\n` +
-    `Supported platforms: ${Object.keys(PLATFORM_PACKAGES).join(', ')}\n`,
+    (isWindows
+      ? `Windows is supported via WSL — install bract inside a WSL Linux environment.\n`
+      : `Supported platforms: ${Object.keys(PLATFORM_PACKAGES).join(', ')}\n`),
   );
   process.exit(1);
 }
@@ -38,6 +40,6 @@ try {
   process.exit(1);
 }
 
-const binary = join(pkgDir, process.platform === 'win32' ? 'bract.exe' : 'bract');
+const binary = join(pkgDir, 'bract');
 const result = spawnSync(binary, process.argv.slice(2), { stdio: 'inherit' });
 process.exit(result.status ?? 1);

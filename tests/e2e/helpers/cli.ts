@@ -1,60 +1,86 @@
 /**
- * @file helpers/cli.ts
- * Runs the bract CLI as a subprocess and captures stdout, stderr, exit code.
+ * CLI test helper — spawns the bract CLI and captures output.
+ *
+ * In source mode (default), runs `bun packages/cli/src/index.ts`.
+ * Set BRACT_E2E_BINARY=1 to test against the compiled binary instead.
  */
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
 
+const REPO_ROOT = join(import.meta.dir, '../../..');
+
+/** Result of a CLI invocation. */
 export interface CliResult {
   stdout: string;
   stderr: string;
   exitCode: number;
 }
 
-/**
- * Resolve the bract binary to test.
- *
- * - BRACT_E2E_BINARY=1 → compiled binary at packages/cli/dist/bract
- * - default           → source via `bun run packages/cli/src/index.ts`
- */
-function resolveBinary(): { cmd: string; args: string[] } {
-  const repoRoot = join(import.meta.dir, '..', '..', '..');
-  if (process.env.BRACT_E2E_BINARY === '1') {
-    const bin = join(repoRoot, 'packages', 'cli', 'dist', 'bract');
-    if (!existsSync(bin)) {
-      throw new Error(`Compiled binary not found at ${bin} — run 'bun run build' first`);
-    }
-    return { cmd: bin, args: [] };
-  }
-  return {
-    cmd: process.execPath,
-    args: ['run', join(repoRoot, 'packages', 'cli', 'src', 'index.ts')],
-  };
+export interface CliOptions {
+  env?: Record<string, string>;
+  stdin?: string;
+  cwd?: string;
+  /** Timeout in ms. Default: 10_000 */
+  timeout?: number;
 }
 
-const { cmd, args: baseArgs } = resolveBinary();
+function binaryPath(): string {
+  if (process.env.BRACT_E2E_BINARY) {
+    // Expect the compiled binary to be at packages/cli/dist/bract
+    return join(REPO_ROOT, 'packages/cli/dist/bract');
+  }
+  return join(REPO_ROOT, 'packages/cli/src/index.ts');
+}
+
+function buildArgs(cliArgs: string[]): [string, string[]] {
+  if (process.env.BRACT_E2E_BINARY) {
+    return [binaryPath(), cliArgs];
+  }
+  return [process.execPath, [binaryPath(), ...cliArgs]];
+}
 
 /**
- * Run the bract CLI with given arguments and optional env overrides.
- * Resolves when the process exits.
+ * Spawn `bract <args>` and return stdout, stderr, and exit code.
+ * Never throws — exits codes are captured in the result.
  */
 export async function cli(
   args: string[],
-  opts: { env?: Record<string, string>; stdin?: string; cwd?: string } = {},
+  opts: CliOptions = {},
 ): Promise<CliResult> {
-  const proc = Bun.spawn([cmd, ...baseArgs, ...args], {
-    cwd: opts.cwd,
-    env: { ...process.env, ...opts.env } as Record<string, string>,
-    stdin: opts.stdin ? Buffer.from(opts.stdin) : 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const [cmd, fullArgs] = buildArgs(args);
+  const timeout = opts.timeout ?? 10_000;
+
+  const proc = Bun.spawn([cmd, ...fullArgs], {
+    cwd: opts.cwd ?? REPO_ROOT,
+    env: {
+      ...(process.env as Record<string, string>),
+      ...opts.env,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+  // Feed stdin if provided
+  if (opts.stdin) {
+    proc.stdin.write(opts.stdin);
+    proc.stdin.end();
+  } else {
+    proc.stdin.end();
+  }
+
+  const timeoutId = setTimeout(() => {
+    try { proc.kill(); } catch { /* ignore */ }
+  }, timeout);
+
+  const [stdoutBuf, stderrBuf, exitCode] = await Promise.all([
+    Bun.readableStreamToText(proc.stdout),
+    Bun.readableStreamToText(proc.stderr),
     proc.exited,
   ]);
 
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+  clearTimeout(timeoutId);
+
+  return {
+    stdout: stdoutBuf,
+    stderr: stderrBuf,
+    exitCode: exitCode ?? 1,
+  };
 }

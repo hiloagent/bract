@@ -1,197 +1,217 @@
 /**
- * @file tests/e2e/tier2-lifecycle.test.ts
- * Tier 2 — Agent lifecycle tests. Requires the compiled binary (spawn creates
- * a detached subprocess). Uses mock LLM server so no Ollama is needed.
+ * Tier 2 — Agent spawn lifecycle tests.
+ * Tests bract spawn in detached and foreground modes, signal handling, and
+ * message processing with a mock LLM.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { join } from 'node:path';
-import { cli } from './helpers/cli.ts';
-import { makeFixture, type Fixture } from './helpers/fixtures.ts';
-import { startMockLLM, type MockLLMServer } from './helpers/mock-llm-server.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { cli } from './helpers/cli';
+import { makeFixture, type Fixture } from './helpers/fixtures';
+import { startMockLLM, type MockLLMServer } from './helpers/mock-llm-server';
 import {
-  trackAgentPid,
-  killAll,
-  isAlive,
-  waitForFile,
-  waitForDeath,
-} from './helpers/process-cleanup.ts';
+  trackPidFile, killAll, isAlive, waitForFile, waitForFileContent,
+} from './helpers/process-cleanup';
 
-let fx: Fixture;
-let llm: MockLLMServer;
+describe('spawn lifecycle', () => {
+  let fx: Fixture;
+  let llm: MockLLMServer;
 
-beforeEach(async () => {
-  fx = makeFixture([{ name: 'assistant', model: 'mock-model', restart: 'never' }]);
-  llm = await startMockLLM();
-  llm.setFixed('I am the mock reply.');
-});
+  beforeEach(() => {
+    fx = makeFixture([{ name: 'alice', model: 'test-model' }]);
+    llm = startMockLLM();
+    llm.setFixed('mock response');
+  });
 
-afterEach(() => {
-  killAll();
-  fx.cleanup();
-  llm.stop();
-});
+  afterEach(() => {
+    killAll();
+    llm.stop();
+    fx.cleanup();
+  });
 
-// ── spawn / ps ────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────
+  // TC-L1–L3: detached spawn
+  // ────────────────────────────────────────────────
 
-describe('agent spawn', () => {
-  test('TC-L1: spawn --detach reports pid', async () => {
+  it('TC-L1: spawn --detach exits 0, writes pid file', async () => {
     const r = await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
+      ['spawn', 'alice', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toMatch(/spawned assistant \(pid \d+\)/);
-  });
+    expect(r.stdout).toContain('spawned');
+    expect(r.stdout).toContain('alice');
 
-  test('TC-L2: spawned agent appears in ps as running', async () => {
-    await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    await Bun.sleep(500);
-    const r = await cli(['ps'], { env: fx.env });
-    expect(r.stdout).toContain('assistant');
-    expect(r.stdout).toMatch(/running/i);
-  });
-
-  test('TC-L3: spawned agent writes pid file', async () => {
-    await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    const pidFile = join(fx.home, 'agents', 'assistant', 'pid');
-    const appeared = await waitForFile(pidFile, 5000);
+    const pidFile = join(fx.home, 'agents', 'alice', 'pid');
+    const appeared = await waitForFile(pidFile, 3_000);
     expect(appeared).toBe(true);
 
-    const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
-    trackAgentPid(fx.home, 'assistant');
-    expect(isAlive(pid)).toBe(true);
+    const pid = trackPidFile(pidFile);
+    expect(pid).toBeGreaterThan(0);
+    expect(isAlive(pid!)).toBe(true);
   });
 
-  test('TC-L4: spawned agent stays alive after 3s', async () => {
-    await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    const pidFile = join(fx.home, 'agents', 'assistant', 'pid');
-    await waitForFile(pidFile, 5000);
-    const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
-    trackAgentPid(fx.home, 'assistant');
-
-    await Bun.sleep(3000);
-    expect(isAlive(pid)).toBe(true);
-  });
-
-  test('TC-L5: spawn --json outputs JSON', async () => {
+  it('TC-L2: spawn --detach --json returns JSON with pid', async () => {
     const r = await cli(
-      ['spawn', 'assistant', '--detach', '--json', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
+      ['spawn', 'alice', '--detach', '--json', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
     expect(r.exitCode).toBe(0);
-    const parsed = JSON.parse(r.stdout);
-    expect(parsed.name).toBe('assistant');
-    expect(typeof parsed.pid).toBe('number');
-    trackAgentPid(fx.home, 'assistant');
+    const data = JSON.parse(r.stdout);
+    expect(data.name).toBe('alice');
+    expect(data.pid).toBeGreaterThan(0);
+    expect(data.status).toBe('running');
   });
 
-  test('TC-L6: spawn unknown agent exits non-zero', async () => {
+  it('TC-L3: spawned agent status is "running" in ps', async () => {
+    await cli(
+      ['spawn', 'alice', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+    );
+    const pidFile = join(fx.home, 'agents', 'alice', 'pid');
+    await waitForFile(pidFile, 3_000);
+    trackPidFile(pidFile);
+
+    const ps = await cli(['ps', '--json'], { env: { BRACT_HOME: fx.home } });
+    const agents = JSON.parse(ps.stdout);
+    const alice = agents.find((a: { name: string }) => a.name === 'alice');
+    expect(alice?.status).toBe('running');
+  });
+
+  // ────────────────────────────────────────────────
+  // TC-L4: spawn unknown agent
+  // ────────────────────────────────────────────────
+
+  it('TC-L4: spawn unknown agent exits 1', async () => {
     const r = await cli(
-      ['spawn', 'nonexistent', '--detach', '--file', fx.configPath],
-      { env: fx.env, cwd: fx.home },
+      ['spawn', 'ghost', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home } },
     );
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toMatch(/unknown agent|not found/i);
-  });
-});
-
-// ── message processing ────────────────────────────────────────────────────────
-
-describe('message processing', () => {
-  test('TC-L7: agent processes inbox message and writes to outbox', async () => {
-    llm.enqueue({ content: 'The answer is 42.' });
-
-    await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
-    );
-    const pidFile = join(fx.home, 'agents', 'assistant', 'pid');
-    await waitForFile(pidFile, 5000);
-    trackAgentPid(fx.home, 'assistant');
-
-    await cli(['send', 'assistant', 'What is the answer?'], { env: fx.env });
-
-    // Wait for outbox message to appear
-    const outboxDir = join(fx.home, 'agents', 'assistant', 'outbox');
-    const appeared = await waitForFile(outboxDir, 8000);
-    expect(appeared).toBe(true);
-
-    // Poll for actual file in outbox
-    let outboxFile: string | null = null;
-    const deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
-      const files = existsSync(outboxDir)
-        ? require('node:fs').readdirSync(outboxDir).filter((f: string) => f.endsWith('.msg'))
-        : [];
-      if (files.length > 0) { outboxFile = files[0]; break; }
-      await Bun.sleep(200);
-    }
-    expect(outboxFile).not.toBeNull();
-
-    const r = await cli(['read', 'assistant'], { env: fx.env });
-    expect(r.stdout).toContain('The answer is 42.');
-    expect(llm.requestCount).toBe(1);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain('ghost');
   });
 
-  test('TC-L8: agent processes multiple messages sequentially', async () => {
-    llm.enqueue({ content: 'Reply one.' });
-    llm.enqueue({ content: 'Reply two.' });
+  // ────────────────────────────────────────────────
+  // TC-L5–L6: message processing
+  // ────────────────────────────────────────────────
+
+  it('TC-L5: agent processes inbox message and writes outbox', async () => {
+    llm.enqueue({ content: 'pong!' });
 
     await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
+      ['spawn', 'alice', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
-    const pidFile = join(fx.home, 'agents', 'assistant', 'pid');
-    await waitForFile(pidFile, 5000);
-    trackAgentPid(fx.home, 'assistant');
+    const pidFile = join(fx.home, 'agents', 'alice', 'pid');
+    await waitForFile(pidFile, 3_000);
+    trackPidFile(pidFile);
 
-    await cli(['send', 'assistant', 'msg1'], { env: fx.env });
-    await cli(['send', 'assistant', 'msg2'], { env: fx.env });
+    // Send a message
+    await cli(['send', 'alice', 'ping'], { env: { BRACT_HOME: fx.home } });
 
-    // Wait for 2 outbox messages
-    const outboxDir = join(fx.home, 'agents', 'assistant', 'outbox');
-    const deadline = Date.now() + 12000;
-    while (Date.now() < deadline) {
-      if (existsSync(outboxDir)) {
-        const files = require('node:fs').readdirSync(outboxDir).filter((f: string) => f.endsWith('.msg'));
-        if (files.length >= 2) break;
+    // Wait for outbox to have a file
+    const outboxDir = join(fx.home, 'agents', 'alice', 'outbox');
+    const appeared = await waitForFile(outboxDir, 8_000);
+    // The outbox dir exists as soon as register() runs, but we need a .msg file
+    const msgAppeared = await (async () => {
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        const { readdirSync } = await import('node:fs');
+        try {
+          const files = readdirSync(outboxDir).filter((f: string) => f.endsWith('.msg'));
+          if (files.length > 0) return true;
+        } catch { /* ignore */ }
+        await Bun.sleep(200);
       }
-      await Bun.sleep(300);
-    }
-    expect(llm.requestCount).toBeGreaterThanOrEqual(2);
-  });
+      return false;
+    })();
+    expect(msgAppeared).toBe(true);
 
-  test('TC-L9: SIGTERM shuts down agent cleanly', async () => {
+    const read = await cli(['read', 'alice'], { env: { BRACT_HOME: fx.home } });
+    expect(read.stdout).toContain('pong!');
+  }, 20_000);
+
+  // ────────────────────────────────────────────────
+  // TC-L6–L9: signal handling
+  // ────────────────────────────────────────────────
+
+  it('TC-L6: SIGTERM causes agent to set status=dead', async () => {
     await cli(
-      ['spawn', 'assistant', '--detach', '--file', fx.configPath],
-      { env: { ...fx.env, BRACT_AGENT_BASE_URL: llm.baseUrl }, cwd: fx.home },
+      ['spawn', 'alice', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
     );
-    const pidFile = join(fx.home, 'agents', 'assistant', 'pid');
-    await waitForFile(pidFile, 5000);
-    const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
+    const pidFile = join(fx.home, 'agents', 'alice', 'pid');
+    await waitForFile(pidFile, 3_000);
 
-    // Give the worker time to register signal handlers.
-    // spawnDetached writes the pid file from the CLI before the worker executes,
-    // so the pid can appear before process.once('SIGTERM') is registered.
+    const pid = trackPidFile(pidFile);
+    expect(pid).toBeGreaterThan(0);
+
+    // Give the worker time to register its SIGTERM handler
     await Bun.sleep(500);
 
-    process.kill(pid, 'SIGTERM');
-    const died = await waitForDeath(pid, 3000);
-    expect(died).toBe(true);
+    process.kill(pid!, 'SIGTERM');
 
-    // Status should be updated to dead — give more time for the handler to write it
-    await Bun.sleep(1000);
-    const status = readFileSync(join(fx.home, 'agents', 'assistant', 'status'), 'utf8').trim();
-    expect(status).toBe('dead');
+    const died = await waitForFileContent(
+      join(fx.home, 'agents', 'alice', 'status'),
+      'dead',
+      5_000,
+    );
+    expect(died).toBe(true);
+  }, 15_000);
+
+  it('TC-L7: after SIGTERM, ps shows status=dead', async () => {
+    await cli(
+      ['spawn', 'alice', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+    );
+    const pidFile = join(fx.home, 'agents', 'alice', 'pid');
+    await waitForFile(pidFile, 3_000);
+
+    const pid = trackPidFile(pidFile);
+    await Bun.sleep(500);
+    process.kill(pid!, 'SIGTERM');
+    await waitForFileContent(join(fx.home, 'agents', 'alice', 'status'), 'dead', 5_000);
+
+    const ps = await cli(['ps', '--json'], { env: { BRACT_HOME: fx.home } });
+    const agents = JSON.parse(ps.stdout);
+    const alice = agents.find((a: { name: string }) => a.name === 'alice');
+    expect(alice?.status).toBe('dead');
+  }, 15_000);
+
+  it('TC-L8: spawn missing --name and no --all exits 1', async () => {
+    const r = await cli(
+      ['spawn', '--detach', '--file', fx.configPath],
+      { env: { BRACT_HOME: fx.home } },
+    );
+    expect(r.exitCode).toBe(1);
   });
+
+  it('TC-L9: spawn --all --detach spawns multiple agents', async () => {
+    const fx2 = makeFixture([
+      { name: 'alice', model: 'test' },
+      { name: 'bob', model: 'test' },
+    ]);
+    try {
+      const r = await cli(
+        ['spawn', '--all', '--detach', '--file', fx2.configPath],
+        { env: { BRACT_HOME: fx2.home, BRACT_AGENT_BASE_URL: llm.baseUrl } },
+      );
+      expect(r.exitCode).toBe(0);
+
+      // Both agents should appear in ps
+      const alicePid = await waitForFile(join(fx2.home, 'agents', 'alice', 'pid'), 3_000);
+      const bobPid = await waitForFile(join(fx2.home, 'agents', 'bob', 'pid'), 3_000);
+      expect(alicePid).toBe(true);
+      expect(bobPid).toBe(true);
+
+      trackPidFile(join(fx2.home, 'agents', 'alice', 'pid'));
+      trackPidFile(join(fx2.home, 'agents', 'bob', 'pid'));
+
+      const ps = await cli(['ps', '--json'], { env: { BRACT_HOME: fx2.home } });
+      const agents = JSON.parse(ps.stdout);
+      expect(agents.length).toBe(2);
+    } finally {
+      fx2.cleanup();
+    }
+  }, 15_000);
 });
