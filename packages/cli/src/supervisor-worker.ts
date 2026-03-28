@@ -14,8 +14,8 @@
 import { join } from 'node:path';
 import { mkdirSync, openSync, closeSync, unlinkSync, existsSync } from 'node:fs';
 import { Supervisor } from '@losoft/bract-supervisor';
-import { ProcessTable, PipeRouter } from '@losoft/bract-runtime';
-import type { PipeDef } from '@losoft/bract-runtime';
+import { ProcessTable, PipeRouter, JoinRouter } from '@losoft/bract-runtime';
+import type { PipeDef, JoinPipeDef } from '@losoft/bract-runtime';
 import { parseBractConfig } from './cmd-spawn.js';
 import { sentinelCommand } from './spawn-args.js';
 
@@ -91,13 +91,19 @@ export async function runSupervisor(): Promise<void> {
 
   // Build pipe definitions from config
   const pipeDefs: PipeDef[] = [];
+  const joinDefs: JoinPipeDef[] = [];
   for (const agent of config.agents) {
     for (const pipe of agent.pipes ?? []) {
-      pipeDefs.push({ from: pipe.from, to: agent.name, filter: pipe.filter });
+      if ('mode' in pipe && pipe.mode === 'join') {
+        joinDefs.push({ mode: 'join', from: pipe.from, to: agent.name });
+      } else {
+        const mergePipe = pipe as { from: string; filter?: string };
+        pipeDefs.push({ from: mergePipe.from, to: agent.name, filter: mergePipe.filter });
+      }
     }
   }
 
-  // Start PipeRouter if any pipes are defined
+  // Start PipeRouter if any merge pipes are defined
   let pipeRouter: PipeRouter | null = null;
   if (pipeDefs.length > 0) {
     pipeRouter = new PipeRouter(pt.root, pipeDefs);
@@ -105,9 +111,18 @@ export async function runSupervisor(): Promise<void> {
     process.stderr.write(`[supervisor] pipe router started (${pipeDefs.length} pipe(s))\n`);
   }
 
+  // Start JoinRouter if any join pipes are defined
+  let joinRouter: JoinRouter | null = null;
+  if (joinDefs.length > 0) {
+    joinRouter = new JoinRouter(pt.root, joinDefs);
+    joinRouter.start();
+    process.stderr.write(`[supervisor] join router started (${joinDefs.length} join(s))\n`);
+  }
+
   async function shutdown() {
     supervisor.stop();
     pipeRouter?.stop();
+    joinRouter?.stop();
     // SIGTERM all running agents so they can clean up before we exit
     for (const entry of pt.snapshot()) {
       if (entry.status === 'running' && entry.pid !== null) {

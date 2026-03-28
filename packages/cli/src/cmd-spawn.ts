@@ -9,12 +9,16 @@ import { ProcessTable } from '@losoft/bract-runtime';
 import { resolveBractHome } from './home.js';
 import { sentinelCommand } from './spawn-args.js';
 
+export type BractPipeConfig =
+  | { from: string; filter?: string }
+  | { mode: 'join'; from: string[] };
+
 export interface BractAgentConfig {
   name: string;
   model: string;
   system?: string;
   restart?: "always" | "on-failure" | "never";
-  pipes?: Array<{ from: string; filter?: string }>;
+  pipes?: BractPipeConfig[];
 }
 
 export interface BractConfig {
@@ -98,7 +102,7 @@ export async function parseBractConfig(filePath: string): Promise<BractConfig> {
     }
 
     const rawPipes = agent.pipes;
-    let pipes: Array<{ from: string; filter?: string }> | undefined;
+    let pipes: BractPipeConfig[] | undefined;
     if (rawPipes !== undefined) {
       if (!Array.isArray(rawPipes)) {
         throw new Error(`bract.yml: agents[${i}].pipes must be an array`);
@@ -108,6 +112,17 @@ export async function parseBractConfig(filePath: string): Promise<BractConfig> {
           throw new Error(`bract.yml: agents[${i}].pipes[${j}] must be an object`);
         }
         const pipe = p as Record<string, unknown>;
+        if (pipe.mode === 'join') {
+          if (!Array.isArray(pipe.from) || pipe.from.length < 2) {
+            throw new Error(`bract.yml: agents[${i}].pipes[${j}].from must be an array of at least 2 agent names for mode join`);
+          }
+          for (const f of pipe.from as unknown[]) {
+            if (typeof f !== 'string' || f.length === 0) {
+              throw new Error(`bract.yml: agents[${i}].pipes[${j}].from entries must be non-empty strings`);
+            }
+          }
+          return { mode: 'join' as const, from: pipe.from as string[] };
+        }
         if (typeof pipe.from !== 'string' || pipe.from.length === 0) {
           throw new Error(`bract.yml: agents[${i}].pipes[${j}].from is required`);
         }
