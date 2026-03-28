@@ -1,0 +1,33 @@
+{
+  "name": "@losoft/bract-client",
+  "version": "0.0.1",
+  "description": "Thin client for sending messages to bract agent inboxes",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "node": "./dist/node/index.js",
+      "import": "./dist/node/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build:bun": "bun build ./src/index.ts --outdir ./dist/bun",
+    "build:node": "bun build ./src/index.ts --outdir ./dist/node --format esm --target node --packages external",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build": "bun run build:bun && bun run build:node && bun run build:types",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@losoft/bract-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0"
+  }
+}
