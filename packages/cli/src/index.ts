@@ -3,7 +3,7 @@
  * @file index.ts
  * bract CLI entry point. Parses argv and dispatches to subcommands.
  * Commands: ps | send | inbox | read | spawn | validate | up | down | log
- * Flags: --home <path> | --json | --quiet
+ * Flags: --home <path> | --json | --quiet | --version
  * @module @losoft/bract-cli
  */
 /**
@@ -113,6 +113,7 @@ function usage(): void {
       '  --home <path>   Override BRACT_HOME (default: ~/.bract)',
       '  --json          Machine-readable JSON output',
       '  --quiet         Suppress non-essential output',
+      '  --version, -v   Print version and exit',
     ].join('\n') + '\n',
   );
 }
@@ -136,6 +137,12 @@ async function main(): Promise<void> {
 
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     usage();
+    return;
+  }
+
+  if (argv[0] === '--version' || argv[0] === '-v') {
+    const pkg = await import('../package.json', { with: { type: 'json' } });
+    process.stdout.write(pkg.default.version + '\n');
     return;
   }
 
