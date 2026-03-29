@@ -99,9 +99,9 @@ describe('log', () => {
   beforeEach(() => { fx = makeFixture([{ name: 'alice' }]); });
   afterEach(() => fx.cleanup());
 
-  it('TC-LOG1: log for unknown agent exits 1 with "unknown agent"', async () => {
+  it('TC-LOG1: log for unknown agent exits 3 with "unknown agent"', async () => {
     const r = await cli(['log', 'ghost'], { env: { BRACT_HOME: fx.home } });
-    expect(r.exitCode).toBe(1);
+    expect(r.exitCode).toBe(3);
     expect(r.stderr).toContain('ghost');
   });
 
