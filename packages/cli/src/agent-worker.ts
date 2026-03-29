@@ -40,6 +40,9 @@ export async function runWorker(): Promise<void> {
 
   const runner = new AgentRunner({ name, home, model, system, ...(baseUrl ? { baseUrl } : {}) });
 
+  const ts = () => new Date().toISOString();
+  process.stdout.write(`[${ts()}] [${name}] started — model: ${model}\n`);
+
   let lastPct = -1;
   runner.on('pull:progress', (evt) => {
     if (evt.completed && evt.total) {
@@ -53,6 +56,19 @@ export async function runWorker(): Promise<void> {
       lastPct = -1;
       process.stderr.write(`[${name}] pulling ${evt.model}: ${evt.status}\n`);
     }
+  });
+
+  runner.on('message', ({ message }: { message: { id: string } }) => {
+    process.stdout.write(`[${ts()}] [${name}] ← received message ${message.id}\n`);
+  });
+
+  runner.on('run', ({ messageId, durationMs }: { messageId: string; durationMs: number }) => {
+    process.stdout.write(`[${ts()}] [${name}] ✓ replied to ${messageId} (${durationMs}ms)\n`);
+  });
+
+  runner.on('run:error', ({ messageId, error }: { messageId: string; error: unknown }) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[${ts()}] [${name}] ✗ error on ${messageId}: ${msg}\n`);
   });
 
   // Reffed timer prevents the event loop from exiting in compiled Bun SFEs.
