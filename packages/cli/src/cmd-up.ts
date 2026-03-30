@@ -8,7 +8,7 @@ import { existsSync, readFileSync, mkdirSync, openSync, closeSync } from 'node:f
 import { resolveBractHome } from './home.js';
 import { parseBractConfig } from './cmd-spawn.js';
 import { sentinelCommand } from './spawn-args.js';
-import type { PipeDef, JoinPipeDef } from '@losoft/bract-runtime';
+import type { PipeDef, JoinPipeDef, LatestPipeDef } from '@losoft/bract-runtime';
 
 export interface UpOptions {
   /** Path to bract.yml. Default: ./bract.yml */
@@ -65,7 +65,7 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
 
   if (opts.follow) {
     const { Supervisor } = await import('@losoft/bract-supervisor');
-    const { ProcessTable, PipeRouter, JoinRouter } = await import('@losoft/bract-runtime');
+    const { ProcessTable, PipeRouter, JoinRouter, LatestRouter } = await import('@losoft/bract-runtime');
     const pt = new ProcessTable(home);
     const supervisor = new Supervisor(home);
 
@@ -90,10 +90,13 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
     // Build and start pipe routers if any pipes are configured
     const pipeDefs: PipeDef[] = [];
     const joinDefs: JoinPipeDef[] = [];
+    const latestDefs: LatestPipeDef[] = [];
     for (const agent of config.agents) {
       for (const pipe of agent.pipes ?? []) {
         if ('mode' in pipe && pipe.mode === 'join') {
           joinDefs.push({ mode: 'join', from: pipe.from, to: agent.name });
+        } else if ('mode' in pipe && pipe.mode === 'latest') {
+          latestDefs.push({ mode: 'latest', from: pipe.from, to: agent.name });
         } else {
           const mergePipe = pipe as { from: string; filter?: string };
           pipeDefs.push({ from: mergePipe.from, to: agent.name, filter: mergePipe.filter });
@@ -110,9 +113,14 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
       joinRouter = new JoinRouter(pt.root, joinDefs);
       joinRouter.start();
     }
+    let latestRouter: InstanceType<typeof LatestRouter> | null = null;
+    if (latestDefs.length > 0) {
+      latestRouter = new LatestRouter(pt.root, latestDefs);
+      latestRouter.start();
+    }
 
-    process.on('SIGINT', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); process.exit(0); });
-    process.on('SIGTERM', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); process.exit(0); });
+    process.on('SIGINT', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); latestRouter?.stop(); process.exit(0); });
+    process.on('SIGTERM', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); latestRouter?.stop(); process.exit(0); });
     supervisor.on('agent:died', (e: { name: string; pid: number }) => process.stdout.write('  died ' + e.name + ' (pid ' + e.pid + ')\n'));
     supervisor.on('agent:restarted', (e: { name: string; newPid: number }) => process.stdout.write('  restarted ' + e.name + ' (pid ' + e.newPid + ')\n'));
     supervisor.on('agent:exhausted', (e: { name: string }) => process.stdout.write('  ' + e.name + ' exhausted restart limit\n'));

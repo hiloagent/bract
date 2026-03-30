@@ -170,13 +170,14 @@ function validatePipe(pipe: unknown, path: string): ValidationError[] {
   }
   const p = pipe as Record<string, unknown>;
 
-  if (p.mode === 'join') {
+  if (p.mode === 'join' || p.mode === 'latest') {
     const known = new Set(['mode', 'from']);
     for (const key of Object.keys(p)) {
       if (!known.has(key)) errors.push(err(`${path}.${key}`, 'unknown property'));
     }
+    const modeLabel = p.mode === 'join' ? 'mode join' : 'mode latest';
     if (!Array.isArray(p.from) || p.from.length < 2) {
-      errors.push(err(`${path}.from`, 'mode join requires from to be an array of at least 2 agent names'));
+      errors.push(err(`${path}.from`, `${modeLabel} requires from to be an array of at least 2 agent names`));
     } else {
       for (let i = 0; i < p.from.length; i++) {
         const f = p.from[i];
@@ -191,7 +192,7 @@ function validatePipe(pipe: unknown, path: string): ValidationError[] {
   }
 
   if (p.mode !== undefined) {
-    errors.push(err(`${path}.mode`, 'unknown mode — valid values: join'));
+    errors.push(err(`${path}.mode`, 'unknown mode — valid values: join, latest'));
   }
 
   const known = new Set(['from', 'filter']);
@@ -274,7 +275,7 @@ function collectPipes(config: Record<string, unknown>): PipeRef[] {
     if (typeof agent.name !== 'string') continue;
     if (!Array.isArray(agent.pipes)) continue;
     for (const pipe of agent.pipes as Array<Record<string, unknown>>) {
-      if (pipe.mode === 'join') {
+      if (pipe.mode === 'join' || pipe.mode === 'latest') {
         if (Array.isArray(pipe.from)) {
           for (const source of pipe.from as string[]) {
             if (typeof source === 'string') {

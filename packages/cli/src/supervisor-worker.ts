@@ -14,8 +14,8 @@
 import { join } from 'node:path';
 import { mkdirSync, openSync, closeSync, unlinkSync, existsSync } from 'node:fs';
 import { Supervisor } from '@losoft/bract-supervisor';
-import { ProcessTable, PipeRouter, JoinRouter } from '@losoft/bract-runtime';
-import type { PipeDef, JoinPipeDef } from '@losoft/bract-runtime';
+import { ProcessTable, PipeRouter, JoinRouter, LatestRouter } from '@losoft/bract-runtime';
+import type { PipeDef, JoinPipeDef, LatestPipeDef } from '@losoft/bract-runtime';
 import { parseBractConfig } from './cmd-spawn.js';
 import { sentinelCommand } from './spawn-args.js';
 
@@ -92,10 +92,13 @@ export async function runSupervisor(): Promise<void> {
   // Build pipe definitions from config
   const pipeDefs: PipeDef[] = [];
   const joinDefs: JoinPipeDef[] = [];
+  const latestDefs: LatestPipeDef[] = [];
   for (const agent of config.agents) {
     for (const pipe of agent.pipes ?? []) {
       if ('mode' in pipe && pipe.mode === 'join') {
         joinDefs.push({ mode: 'join', from: pipe.from, to: agent.name });
+      } else if ('mode' in pipe && pipe.mode === 'latest') {
+        latestDefs.push({ mode: 'latest', from: pipe.from, to: agent.name });
       } else {
         const mergePipe = pipe as { from: string; filter?: string };
         pipeDefs.push({ from: mergePipe.from, to: agent.name, filter: mergePipe.filter });
@@ -119,10 +122,19 @@ export async function runSupervisor(): Promise<void> {
     process.stderr.write(`[supervisor] join router started (${joinDefs.length} join(s))\n`);
   }
 
+  // Start LatestRouter if any latest pipes are defined
+  let latestRouter: LatestRouter | null = null;
+  if (latestDefs.length > 0) {
+    latestRouter = new LatestRouter(pt.root, latestDefs);
+    latestRouter.start();
+    process.stderr.write(`[supervisor] latest router started (${latestDefs.length} latest(s))\n`);
+  }
+
   async function shutdown() {
     supervisor.stop();
     pipeRouter?.stop();
     joinRouter?.stop();
+    latestRouter?.stop();
     // SIGTERM all running agents so they can clean up before we exit
     for (const entry of pt.snapshot()) {
       if (entry.status === 'running' && entry.pid !== null) {
