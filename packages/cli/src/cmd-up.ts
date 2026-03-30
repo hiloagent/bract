@@ -8,7 +8,7 @@ import { existsSync, readFileSync, mkdirSync, openSync, closeSync } from 'node:f
 import { resolveBractHome } from './home.js';
 import { parseBractConfig } from './cmd-spawn.js';
 import { sentinelCommand } from './spawn-args.js';
-import type { PipeDef } from '@losoft/bract-runtime';
+import type { PipeDef, JoinPipeDef } from '@losoft/bract-runtime';
 
 export interface UpOptions {
   /** Path to bract.yml. Default: ./bract.yml */
@@ -64,7 +64,7 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
 
   if (opts.follow) {
     const { Supervisor } = await import('@losoft/bract-supervisor');
-    const { ProcessTable, PipeRouter } = await import('@losoft/bract-runtime');
+    const { ProcessTable, PipeRouter, JoinRouter } = await import('@losoft/bract-runtime');
     const pt = new ProcessTable(home);
     const supervisor = new Supervisor(home);
 
@@ -86,11 +86,17 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
       spawnFn();
     }
 
-    // Build and start pipe router if any pipes are configured
+    // Build and start pipe routers if any pipes are configured
     const pipeDefs: PipeDef[] = [];
+    const joinDefs: JoinPipeDef[] = [];
     for (const agent of config.agents) {
       for (const pipe of agent.pipes ?? []) {
-        pipeDefs.push({ from: pipe.from, to: agent.name, filter: pipe.filter });
+        if ('mode' in pipe && pipe.mode === 'join') {
+          joinDefs.push({ mode: 'join', from: pipe.from, to: agent.name });
+        } else {
+          const mergePipe = pipe as { from: string; filter?: string };
+          pipeDefs.push({ from: mergePipe.from, to: agent.name, filter: mergePipe.filter });
+        }
       }
     }
     let pipeRouter: InstanceType<typeof PipeRouter> | null = null;
@@ -98,9 +104,14 @@ export async function cmdUp(opts: UpOptions = {}): Promise<void> {
       pipeRouter = new PipeRouter(pt.root, pipeDefs);
       pipeRouter.start();
     }
+    let joinRouter: InstanceType<typeof JoinRouter> | null = null;
+    if (joinDefs.length > 0) {
+      joinRouter = new JoinRouter(pt.root, joinDefs);
+      joinRouter.start();
+    }
 
-    process.on('SIGINT', () => { supervisor.stop(); pipeRouter?.stop(); process.exit(0); });
-    process.on('SIGTERM', () => { supervisor.stop(); pipeRouter?.stop(); process.exit(0); });
+    process.on('SIGINT', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); process.exit(0); });
+    process.on('SIGTERM', () => { supervisor.stop(); pipeRouter?.stop(); joinRouter?.stop(); process.exit(0); });
     supervisor.on('agent:died', (e: { name: string; pid: number }) => process.stdout.write('  died ' + e.name + ' (pid ' + e.pid + ')\n'));
     supervisor.on('agent:restarted', (e: { name: string; newPid: number }) => process.stdout.write('  restarted ' + e.name + ' (pid ' + e.newPid + ')\n'));
     supervisor.on('agent:exhausted', (e: { name: string }) => process.stdout.write('  ' + e.name + ' exhausted restart limit\n'));

@@ -169,6 +169,31 @@ function validatePipe(pipe: unknown, path: string): ValidationError[] {
     return [err(path, 'must be an object')];
   }
   const p = pipe as Record<string, unknown>;
+
+  if (p.mode === 'join') {
+    const known = new Set(['mode', 'from']);
+    for (const key of Object.keys(p)) {
+      if (!known.has(key)) errors.push(err(`${path}.${key}`, 'unknown property'));
+    }
+    if (!Array.isArray(p.from) || p.from.length < 2) {
+      errors.push(err(`${path}.from`, 'mode join requires from to be an array of at least 2 agent names'));
+    } else {
+      for (let i = 0; i < p.from.length; i++) {
+        const f = p.from[i];
+        if (typeof f !== 'string') {
+          errors.push(err(`${path}.from[${i}]`, 'must be a string'));
+        } else if (!NAME_PATTERN.test(f)) {
+          errors.push(err(`${path}.from[${i}]`, 'must match pattern [a-z][a-z0-9-]*'));
+        }
+      }
+    }
+    return errors;
+  }
+
+  if (p.mode !== undefined) {
+    errors.push(err(`${path}.mode`, 'unknown mode — valid values: join'));
+  }
+
   const known = new Set(['from', 'filter']);
   for (const key of Object.keys(p)) {
     if (!known.has(key)) errors.push(err(`${path}.${key}`, 'unknown property'));
@@ -249,7 +274,15 @@ function collectPipes(config: Record<string, unknown>): PipeRef[] {
     if (typeof agent.name !== 'string') continue;
     if (!Array.isArray(agent.pipes)) continue;
     for (const pipe of agent.pipes as Array<Record<string, unknown>>) {
-      if (typeof pipe.from === 'string') {
+      if (pipe.mode === 'join') {
+        if (Array.isArray(pipe.from)) {
+          for (const source of pipe.from as string[]) {
+            if (typeof source === 'string') {
+              refs.push({ agentName: agent.name, from: source });
+            }
+          }
+        }
+      } else if (typeof pipe.from === 'string') {
         refs.push({ agentName: agent.name, from: pipe.from });
       }
     }

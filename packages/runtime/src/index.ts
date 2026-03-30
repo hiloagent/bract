@@ -18,3 +18,6 @@ export type { InboxWatcherOptions, MessageEvent, InboxErrorEvent } from './inbox
 
 export { PipeRouter } from './pipe-router.js';
 export type { PipeDef, PipeRouterOptions } from './pipe-router.js';
+
+export { JoinRouter } from './join-router.js';
+export type { JoinPipeDef, JoinRouterOptions } from './join-router.js';
