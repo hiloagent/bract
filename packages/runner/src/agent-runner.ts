@@ -288,6 +288,8 @@ export class AgentRunner extends EventEmitter {
     const outboxDir = join(this.opts.home, 'agents', agentName, 'outbox');
     const t0 = Date.now();
 
+    this.emit('message', { agentName, message });
+
     try {
       const responseText = await this.callModel(message.body);
       await reply(outboxDir, agentName, responseText, { replyTo: message.id });
