@@ -1,5 +1,8 @@
 # Git review fleet — review a pull request with two agents
 # Demonstrates: pipes, filters, fan-out, project-local context
+#
+# NOTE: requires bract v0.2.0 — fan-in pipes and top-level transforms
+# are not yet implemented. bract validate will report errors on this file.
 
 version: 1
 

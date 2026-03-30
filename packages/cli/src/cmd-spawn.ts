@@ -264,7 +264,6 @@ async function spawnForeground(
 /** Spawn one or more agents from bract.yml. */
 export async function cmdSpawn(opts: SpawnOptions = {}): Promise<void> {
   const filePath = resolve(opts.file ?? 'bract.yml');
-  const home = resolveBractHome(opts.home);
 
   let config: BractConfig;
   try {
@@ -274,6 +273,8 @@ export async function cmdSpawn(opts: SpawnOptions = {}): Promise<void> {
     process.exit(1);
     return;
   }
+
+  const home = resolveBractHome(opts.home, config.home);
 
   let agents: BractAgentConfig[];
   try {

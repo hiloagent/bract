@@ -164,12 +164,16 @@ async function main(): Promise<void> {
     }
 
     case 'send': {
-      const [name, ...bodyParts] = cmdArgsParsed;
+      // Use raw cmdArgs (not cmdArgsParsed) so that flag-like strings such as
+      // "--json" or "--quiet" in the body position are NOT silently consumed.
+      // We still support --json / --quiet before the agent name via the global
+      // flag scan above; we only skip the post-name stripping here.
+      const [name, ...rawBodyParts] = cmdArgs;
       if (!name) {
         process.stderr.write('bract send: agent name required\n');
         process.exit(2);
       }
-      const { value: from, rest: argsAfterFrom } = extractValueFlag(bodyParts, '--from');
+      const { value: from, rest: argsAfterFrom } = extractValueFlag(rawBodyParts, '--from');
       const rawBody = argsAfterFrom.join(' ');
 
       let body: string;

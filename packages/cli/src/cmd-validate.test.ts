@@ -11,12 +11,15 @@ import { cmdValidate, type ValidationResult } from './cmd-validate.js';
 let tmpDir: string;
 let originalExit: typeof process.exit;
 let originalStdout: typeof process.stdout.write;
+let originalStderr: typeof process.stderr.write;
 let lastOutput: string;
+let lastErrOutput: string;
 let lastExitCode: number | undefined;
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'bract-validate-'));
   lastOutput = '';
+  lastErrOutput = '';
   lastExitCode = undefined;
 
   originalExit = process.exit;
@@ -31,11 +34,18 @@ beforeEach(() => {
     lastOutput += typeof chunk === 'string' ? chunk : chunk.toString();
     return true;
   };
+
+  originalStderr = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk: string | Buffer) => {
+    lastErrOutput += typeof chunk === 'string' ? chunk : chunk.toString();
+    return true;
+  };
 });
 
 afterEach(() => {
   process.exit = originalExit;
   process.stdout.write = originalStdout;
+  process.stderr.write = originalStderr;
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -45,13 +55,16 @@ function writeYaml(content: string, filename = 'bract.yml'): string {
   return path;
 }
 
-async function runValidate(file: string, json?: boolean): Promise<{ output: string; exitCode: number | undefined }> {
+async function runValidate(
+  file: string,
+  json?: boolean,
+): Promise<{ output: string; errOutput: string; exitCode: number | undefined }> {
   try {
     await cmdValidate({ file, json });
   } catch {
     // process.exit throws in tests
   }
-  return { output: lastOutput, exitCode: lastExitCode };
+  return { output: lastOutput, errOutput: lastErrOutput, exitCode: lastExitCode };
 }
 
 describe('cmdValidate — valid configs', () => {
@@ -119,37 +132,37 @@ describe('cmdValidate — valid configs', () => {
 describe('cmdValidate — schema errors', () => {
   test('missing version', async () => {
     const file = writeYaml('agents:\n  - name: a\n    model: gpt-4\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('✗');
-    expect(output).toContain('version');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('✗');
+    expect(errOutput).toContain('version');
     expect(exitCode).toBe(1);
   });
 
   test('wrong version', async () => {
     const file = writeYaml('version: 2\nagents:\n  - name: a\n    model: gpt-4\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('version');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('version');
     expect(exitCode).toBe(1);
   });
 
   test('missing agents', async () => {
     const file = writeYaml('version: 1\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('agents');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('agents');
     expect(exitCode).toBe(1);
   });
 
   test('empty agents array', async () => {
     const file = writeYaml('version: 1\nagents: []\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('agents');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('agents');
     expect(exitCode).toBe(1);
   });
 
   test('invalid agent name pattern', async () => {
     const file = writeYaml('version: 1\nagents:\n  - name: My_Agent\n    model: gpt-4\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('agents[0].name');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('agents[0].name');
     expect(exitCode).toBe(1);
   });
 
@@ -157,28 +170,28 @@ describe('cmdValidate — schema errors', () => {
     const file = writeYaml(
       'version: 1\nagents:\n  - name: a\n    model: gpt-4\n    restart: maybe\n',
     );
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('restart');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('restart');
     expect(exitCode).toBe(1);
   });
 
   test('unknown top-level property', async () => {
     const file = writeYaml('version: 1\nagents:\n  - name: a\n    model: gpt-4\nunknown: x\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('unknown');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('unknown');
     expect(exitCode).toBe(1);
   });
 
   test('YAML parse error', async () => {
     const file = writeYaml('version: 1\n  bad: indent\n');
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('✗');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('✗');
     expect(exitCode).toBe(1);
   });
 
   test('file not found', async () => {
-    const { output, exitCode } = await runValidate(join(tmpDir, 'nonexistent.yml'));
-    expect(output).toContain('cannot read file');
+    const { errOutput, exitCode } = await runValidate(join(tmpDir, 'nonexistent.yml'));
+    expect(errOutput).toContain('cannot read file');
     expect(exitCode).toBe(1);
   });
 });
@@ -188,9 +201,9 @@ describe('cmdValidate — pipe errors', () => {
     const file = writeYaml(
       'version: 1\nagents:\n  - name: consumer\n    model: gpt-4\n    pipes:\n      - from: ghost\n',
     );
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('unknown agent');
-    expect(output).toContain('ghost');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('unknown agent');
+    expect(errOutput).toContain('ghost');
     expect(exitCode).toBe(1);
   });
 
@@ -209,8 +222,8 @@ describe('cmdValidate — pipe errors', () => {
         '      - from: agent-a',
       ].join('\n'),
     );
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('circular dependency');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('circular dependency');
     expect(exitCode).toBe(1);
   });
 
@@ -233,8 +246,8 @@ describe('cmdValidate — pipe errors', () => {
         '      - from: beta',
       ].join('\n'),
     );
-    const { output, exitCode } = await runValidate(file);
-    expect(output).toContain('circular dependency');
+    const { errOutput, exitCode } = await runValidate(file);
+    expect(errOutput).toContain('circular dependency');
     expect(exitCode).toBe(1);
   });
 
