@@ -11,7 +11,8 @@ import { sentinelCommand } from './spawn-args.js';
 
 export type BractPipeConfig =
   | { from: string; filter?: string }
-  | { mode: 'join'; from: string[] };
+  | { mode: 'join'; from: string[] }
+  | { mode: 'latest'; from: string[] };
 
 export interface BractAgentConfig {
   name: string;
@@ -122,6 +123,17 @@ export async function parseBractConfig(filePath: string): Promise<BractConfig> {
             }
           }
           return { mode: 'join' as const, from: pipe.from as string[] };
+        }
+        if (pipe.mode === 'latest') {
+          if (!Array.isArray(pipe.from) || pipe.from.length < 2) {
+            throw new Error(`bract.yml: agents[${i}].pipes[${j}].from must be an array of at least 2 agent names for mode latest`);
+          }
+          for (const f of pipe.from as unknown[]) {
+            if (typeof f !== 'string' || f.length === 0) {
+              throw new Error(`bract.yml: agents[${i}].pipes[${j}].from entries must be non-empty strings`);
+            }
+          }
+          return { mode: 'latest' as const, from: pipe.from as string[] };
         }
         if (typeof pipe.from !== 'string' || pipe.from.length === 0) {
           throw new Error(`bract.yml: agents[${i}].pipes[${j}].from is required`);
